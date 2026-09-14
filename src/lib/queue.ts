@@ -5,9 +5,12 @@ import pdfParse from 'pdf-parse';
 import { Queue } from '@quatrain/queue';
 import { Log } from '@quatrain/log';
 import { Ingestion } from '@quatrain/ingestion';
+import { Storage } from '@quatrain/storage';
 import { ObjectUri } from '@quatrain/types';
+import { Readable } from 'node:stream';
 import { ContentItem } from './models/ContentItem';
 import { slugify, extractProperNouns } from './utils';
+import { buildS3Key } from './category-mapper';
 import { searchAndCreateConcept } from './concept-autolink';
 import { gitSync } from './git-sync';
 
@@ -60,10 +63,17 @@ export interface IngestTask {
    originalYear?: string;
    originalCopyright?: string;
    citation?: string;
+   /** Pre-computed S3 object key (bulk ingestion). */
+   s3Key?: string;
+   /** When true, skip Gemini AI extraction and use heuristics only. */
+   skipAi?: boolean;
 }
 
 class ModakaHubQueueManager {
    protected isListening = false;
+   protected batchCommitSize = 50;
+   protected pendingCommitFiles: string[] = [];
+   protected pendingCommitCount = 0;
 
    public async startListening() {
       if (this.isListening) return;
@@ -104,12 +114,38 @@ class ModakaHubQueueManager {
       } as IngestTask;
    }
 
+   /**
+    * Configures the batch commit size for grouped Git commits.
+    */
+   public setBatchCommitSize(size: number): void {
+      this.batchCommitSize = size;
+   }
+
+   /**
+    * Forces a batch commit of all accumulated pending files.
+    */
+   public async flushBatchCommit(): Promise<void> {
+      if (this.pendingCommitFiles.length === 0) return;
+      const files = [...this.pendingCommitFiles];
+      const count = this.pendingCommitCount;
+      this.pendingCommitFiles = [];
+      this.pendingCommitCount = 0;
+      await gitSync.stageAndCommit(
+         `feat(curation): bulk ingest ${count} documents`,
+         files
+      );
+      Log.info(`[Modaka-Hub Queue] Batch committed ${count} documents (${files.length} files)`);
+   }
+
    protected async executeTask(task: IngestTask, updateProgress: (progress: number) => Promise<void>): Promise<void> {
       ensureBackend();
 
       const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+      const useS3 = Boolean(process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY);
       const assetsPath = path.join(gitLocalPath, 'assets', 'documents');
-      await fs.mkdir(assetsPath, { recursive: true });
+      if (!useS3) {
+         await fs.mkdir(assetsPath, { recursive: true });
+      }
 
       await updateProgress(20);
 
@@ -141,19 +177,23 @@ class ModakaHubQueueManager {
       let aiResult: any = null;
       const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-      try {
-         const ocrAdapter = Ingestion.getAdapter('ocr');
-         if (ocrAdapter && (rawText || buffer)) {
-            Log.info(`[Modaka-Hub Queue] Running Gemini AI multi-axial extraction (model: ${model})...`);
-            aiResult = await ocrAdapter.process(rawText || buffer!, {
-               isText: Boolean(rawText),
-               mimeType: isPdf ? 'application/pdf' : 'text/plain',
-               contextNote: task.contextNote || 'Ingestion Bradtech pour base agronomique OKF. Extrais les 5 axes: sols (soils), climats (climates), latitudes/altitudes, itinéraires techniques (itineraries), productions végétales (crops). Extrais aussi rigoureusement les métadonnées bibliographiques: auteurs (authors: string[]), traducteurs (translators: string[]), éditeur (publisher: string), édition/version (edition: string), année de publication (publicationYear: string), langue (language: string), ISBN (isbn: string), DOI (doi: string), copyright de cette édition (copyright: string), titre original (originalTitle: string), langue originale (originalLanguage: string), éditeur d\'origine (originalPublisher: string), année originale (originalYear: string), copyright original (originalCopyright: string), et la citation normalisée (citation: string).',
-               model
-            });
+      if (!task.skipAi) {
+         try {
+            const ocrAdapter = Ingestion.getAdapter('ocr');
+            if (ocrAdapter && (rawText || buffer)) {
+               Log.info(`[Modaka-Hub Queue] Running Gemini AI multi-axial extraction (model: ${model})...`);
+               aiResult = await ocrAdapter.process(rawText || buffer!, {
+                  isText: Boolean(rawText),
+                  mimeType: isPdf ? 'application/pdf' : 'text/plain',
+                  contextNote: task.contextNote || 'Ingestion Bradtech pour base agronomique OKF. Extrais les 5 axes: sols (soils), climats (climates), latitudes/altitudes, itinéraires techniques (itineraries), productions végétales (crops). Extrais aussi rigoureusement les métadonnées bibliographiques: auteurs (authors: string[]), traducteurs (translators: string[]), éditeur (publisher: string), édition/version (edition: string), année de publication (publicationYear: string), langue (language: string), ISBN (isbn: string), DOI (doi: string), copyright de cette édition (copyright: string), titre original (originalTitle: string), langue originale (originalLanguage: string), éditeur d\'origine (originalPublisher: string), année originale (originalYear: string), copyright original (originalCopyright: string), et la citation normalisée (citation: string).',
+                  model
+               });
+            }
+         } catch (err: any) {
+            Log.warn(`[Modaka-Hub Queue] AI structuring error: ${err.message}. Using fallback heuristics.`);
          }
-      } catch (err: any) {
-         Log.warn(`[Modaka-Hub Queue] AI structuring error: ${err.message}. Using fallback heuristics.`);
+      } else {
+         Log.info(`[Modaka-Hub Queue] Skipping AI extraction (--skip-ai mode)`);
       }
 
       await updateProgress(70);
@@ -176,14 +216,37 @@ class ModakaHubQueueManager {
       const currentRev = gitStatus.lastCommit ? `rev-${gitStatus.lastCommit.split(' ')[0]}` : 'rev-1.0.0';
       const soa = task.soa || process.env.DEFAULT_SOA || 'bradtech/world-agronomy';
 
-      const fileHash = buffer ? crypto.createHash('sha256').update(buffer).digest('hex') : undefined;
+      const fileHash = task.fileHash || (buffer ? crypto.createHash('sha256').update(buffer).digest('hex') : undefined);
       const originalFileName = task.name || `${slugify(title)}.pdf`;
-      const targetAssetPath = path.join(assetsPath, originalFileName);
-      const relativeAssetUri = `assets/documents/${originalFileName}`;
+      let relativeAssetUri: string;
 
-      if (buffer) {
+      if (useS3 && buffer) {
+         // Upload to S3 (Supabase Storage)
+         const s3Key = task.s3Key || buildS3Key(deductedCategory, fileHash || crypto.randomUUID(), originalFileName);
+         try {
+            const docStorage = Storage.getStorage('document-storage');
+            const stream = Readable.from(buffer);
+            await docStorage.create(
+               { ref: s3Key, bucket: process.env.S3_BUCKET || 'world-agronomy', contentType: isPdf ? 'application/pdf' : 'application/octet-stream' } as any,
+               stream
+            );
+            relativeAssetUri = s3Key;
+            Log.info(`[Modaka-Hub Queue] Uploaded to S3: ${s3Key}`);
+         } catch (s3Err: any) {
+            Log.error(`[Modaka-Hub Queue] S3 upload failed: ${s3Err.message}. Falling back to local storage.`);
+            const targetAssetPath = path.join(assetsPath, originalFileName);
+            await fs.mkdir(assetsPath, { recursive: true });
+            await fs.writeFile(targetAssetPath, buffer);
+            relativeAssetUri = `assets/documents/${originalFileName}`;
+         }
+      } else if (buffer) {
+         // Local filesystem fallback
+         const targetAssetPath = path.join(assetsPath, originalFileName);
          await fs.writeFile(targetAssetPath, buffer);
+         relativeAssetUri = `assets/documents/${originalFileName}`;
          Log.info(`[Modaka-Hub Queue] Saved binary asset to ${targetAssetPath}`);
+      } else {
+         relativeAssetUri = `assets/documents/${originalFileName}`;
       }
 
       const slug = slugify(title) || crypto.randomUUID();
@@ -243,14 +306,26 @@ class ModakaHubQueueManager {
          }
       }
 
-      // Stage and commit to local Git repo
-      await gitSync.stageAndCommit(
-         `feat(curation): ingest document "${title}" into ${deductedCategory} [SOA: ${soa}]`,
-         [
-            path.join('content', deductedCategory, `${slug}.md`),
-            relativeAssetUri
-         ]
-      );
+      // Stage and commit to local Git repo (batch or individual)
+      const commitFiles = [path.join('content', deductedCategory, `${slug}.md`)];
+      // Only stage the binary asset path if it is local (not S3)
+      if (!useS3) {
+         commitFiles.push(relativeAssetUri);
+      }
+
+      if (this.batchCommitSize > 1) {
+         // Batch commit mode: accumulate files
+         this.pendingCommitFiles.push(...commitFiles);
+         this.pendingCommitCount++;
+         if (this.pendingCommitCount >= this.batchCommitSize) {
+            await this.flushBatchCommit();
+         }
+      } else {
+         await gitSync.stageAndCommit(
+            `feat(curation): ingest document "${title}" into ${deductedCategory} [SOA: ${soa}]`,
+            commitFiles
+         );
+      }
 
       await updateProgress(100);
    }

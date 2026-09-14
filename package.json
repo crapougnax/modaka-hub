@@ -17,7 +17,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bulk-ingest": "tsx scripts/bulk-ingest.ts"
   },
   "dependencies": {
     "@astrojs/node": "^9.0.0",
@@ -71,6 +72,7 @@
     "postcss": "^8.4.38",
     "postcss-preset-mantine": "^1.15.0",
     "postcss-simple-vars": "^7.0.1",
+    "tsx": "^4.23.13",
     "typescript": "^5.2.2",
     "vitest": "^2.0.0"
   },
