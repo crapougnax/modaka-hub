@@ -83,7 +83,8 @@ function printUsage(exitCode = 1): void {
    print('  --extensions <list>    Comma-separated extensions (default: pdf,doc,docx,txt)');
    print('  --skip-ai              Skip Gemini AI extraction');
    print('  --dry-run              List files without ingesting');
-   print('  --resume               Skip already-ingested files');
+   print('  --resume               Skip already-ingested files (default: true)');
+   print('  --no-resume, --force   Force re-ingestion of all files');
    print('  --help, -h             Show this help message');
    process.exit(exitCode);
 }
@@ -99,7 +100,7 @@ function parseArgs(argv: string[]): CliOptions {
       extensions: DEFAULT_EXTENSIONS,
       skipAi: false,
       dryRun: false,
-      resume: false,
+      resume: true,
    };
 
    for (let i = 0; i < args.length; i++) {
@@ -134,6 +135,10 @@ function parseArgs(argv: string[]): CliOptions {
             break;
          case '--resume':
             opts.resume = true;
+            break;
+         case '--no-resume':
+         case '--force':
+            opts.resume = false;
             break;
          default:
             if (!args[i].startsWith('--')) {
@@ -255,6 +260,39 @@ class DedupCache {
       await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
       this.dirty = false;
       Log.info(`[DedupCache] Saved ${this.cache.size} hashes`);
+   }
+
+   async syncFromGitRepo(gitLocalPath: string): Promise<number> {
+      let importedCount = 0;
+      try {
+         const contentDir = path.join(gitLocalPath, 'content');
+         const entries = await fs.readdir(contentDir, { withFileTypes: true });
+         for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const categoryDir = path.join(contentDir, entry.name);
+            const files = await fs.readdir(categoryDir);
+            for (const f of files) {
+               if (!f.endsWith('.md') || f === 'index.md') continue;
+               try {
+                  const content = await fs.readFile(path.join(categoryDir, f), 'utf-8');
+                  const match = content.match(/fileHash:\s*([a-f0-9]{64})/i);
+                  if (match && !this.cache.has(match[1])) {
+                     this.cache.set(match[1], {
+                        filename: f,
+                        ingestedAt: 'git-repo',
+                        category: entry.name,
+                     });
+                     importedCount++;
+                  }
+               } catch {}
+            }
+         }
+         if (importedCount > 0) {
+            this.dirty = true;
+            Log.info(`[DedupCache] Synced ${importedCount} existing fiches from Git repo`);
+         }
+      } catch {}
+      return importedCount;
    }
 
    get size(): number {
@@ -613,14 +651,22 @@ async function main(): Promise<void> {
    console.log('');
 
    // Phase 3: Load dedup cache
-   const cachePath = path.resolve(process.cwd(), '.modaka-hub-hashes.json');
+   const cachePath = process.env.DEDUP_CACHE_PATH || path.resolve(process.cwd(), '.modaka-hub-hashes.json');
    const dedup = new DedupCache(cachePath);
    await dedup.load();
+   const syncedFromGit = await dedup.syncFromGitRepo(gitLocalPath);
+   if (syncedFromGit > 0) {
+      console.log(`  ✓ Synced ${syncedFromGit} existing documents from Git repository`);
+   }
+   if (dedup.size > 0) {
+      console.log(`  ℹ Dedup index contains ${dedup.size} known documents`);
+   }
 
    // Phase 4: Process files
    console.log('  ⏳ Processing files...');
    console.log('');
 
+   let isTerminating = false;
    let cursor = 0;
    let completed = 0;
    let ingested = 0;
@@ -647,6 +693,19 @@ async function main(): Promise<void> {
       });
       return commitQueue;
    }
+
+   const handleShutdown = async (signal: string) => {
+      if (isTerminating) return;
+      isTerminating = true;
+      console.log(`\n\n  ⚠ Caught ${signal}. Gracefully flushing pending batch and saving cache...`);
+      await scheduleBatchCommit(true);
+      await dedup.save();
+      console.log(`  ✓ State saved. ${ingested} ingested, ${skipped} skipped. Safe to resume anytime.`);
+      process.exit(0);
+   };
+
+   process.on('SIGINT', () => handleShutdown('SIGINT'));
+   process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
    async function processFile(file: ScanResult): Promise<void> {
       try {
@@ -771,11 +830,11 @@ async function main(): Promise<void> {
 
    const concurrency = Math.max(1, opts.concurrency);
    const workers = Array.from({ length: Math.min(concurrency, files.length) }, async () => {
-      while (cursor < files.length) {
+      while (cursor < files.length && !isTerminating) {
          const index = cursor++;
          const file = files[index];
          await processFile(file);
-         if (opts.delayMs > 0) {
+         if (opts.delayMs > 0 && !isTerminating) {
             await sleep(opts.delayMs);
          }
       }

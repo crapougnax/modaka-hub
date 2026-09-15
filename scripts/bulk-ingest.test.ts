@@ -22,6 +22,7 @@ function runCli(args: string): { stdout: string; exitCode: number } {
          env: {
             ...process.env,
             GIT_LOCAL_PATH: TEST_DIR,
+            DEDUP_CACHE_PATH: path.join(TEST_DIR, '.test-hashes.json'),
             DEFAULT_SOA: 'test/bulk-ingest',
          },
       });
