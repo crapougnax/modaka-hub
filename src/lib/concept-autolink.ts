@@ -1,12 +1,20 @@
 import { ContentItem } from './models/ContentItem';
 import { Storage } from '@quatrain/storage';
 import { Log } from '@quatrain/log';
-import { ApiClient } from '@quatrain/api-client';
 import { Readable } from 'node:stream';
 import { slugify } from './utils/index';
 
-const wikiFrClient = new ApiClient('https://fr.wikipedia.org/api/rest_v1', 'wiki-fr');
-const wikiEnClient = new ApiClient('https://en.wikipedia.org/api/rest_v1', 'wiki-en');
+let wikiFrClient: any = null;
+let wikiEnClient: any = null;
+
+async function getWikiClients() {
+   if (!wikiFrClient) {
+      const { ApiClient } = await import('@quatrain/api-client');
+      wikiFrClient = new ApiClient('https://fr.wikipedia.org/api/rest_v1', 'wiki-fr');
+      wikiEnClient = new ApiClient('https://en.wikipedia.org/api/rest_v1', 'wiki-en');
+   }
+   return { wikiFrClient, wikiEnClient };
+}
 
 /**
  * Searches Wikipedia for a given proper noun / botanical concept and creates a Concept OKF document
@@ -28,6 +36,7 @@ export async function searchAndCreateConcept(properNoun: string): Promise<void> 
 
    Log.info(`[Concept Auto-Link] Searching Wikipedia for concept "${properNoun}"...`);
    try {
+      const { wikiFrClient, wikiEnClient } = await getWikiClients();
       const pageSlug = encodeURIComponent(properNoun.replace(/ /g, '_'));
       const headers = { 'User-Agent': 'AnemorphCurationAgent/1.0 (contact: developers@quatrain.com)' };
 
