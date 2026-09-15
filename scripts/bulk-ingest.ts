@@ -1,8 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Bulk Ingestion CLI for Modaka-Hub.
  *
- * Uses @quatrain/* packages (Storage, Storage-S3, Log, AI, AI-Gemini) via `yarn node --import tsx/esm`
+ * Uses @quatrain/* packages (Storage, Storage-S3, Log, AI, AI-Gemini) executed natively via Bun.
  * which enables proper Yarn PnP + TypeScript resolution.
  *
  * @example

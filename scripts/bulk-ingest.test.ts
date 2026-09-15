@@ -15,7 +15,7 @@ const TEST_DIR = path.resolve(__dirname, '../.test-bulk-ingest');
 /** Helper to run the CLI and capture output */
 function runCli(args: string): { stdout: string; exitCode: number } {
    try {
-      const stdout = execSync(`yarn node --import tsx/esm ${CLI_PATH} ${args}`, {
+      const stdout = execSync(`bun ${CLI_PATH} ${args}`, {
          cwd: path.resolve(__dirname, '..'),
          encoding: 'utf-8',
          timeout: 30_000,
