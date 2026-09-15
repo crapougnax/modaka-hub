@@ -437,12 +437,34 @@ function getGitRevision(gitLocalPath: string): string {
 // ─── PDF Text Extraction ────────────────────────────────────────────────────────
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
+   const originalLog = console.log;
+   const originalWarn = console.warn;
+
+   // Filter out noisy pdf.js internal warnings (e.g. font private use area)
+   const filterWarning = (origFn: (...args: any[]) => void) => (...args: any[]) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      if (
+         msg.includes('private use area') ||
+         msg.includes('Ran out of space in font') ||
+         msg.startsWith('Warning: ')
+      ) {
+         return;
+      }
+      origFn(...args);
+   };
+
+   console.log = filterWarning(originalLog);
+   console.warn = filterWarning(originalWarn);
+
    try {
       const pdfParse = (await import('pdf-parse')).default;
       const parsed = await pdfParse(buffer);
       return parsed.text || '';
    } catch {
       return '';
+   } finally {
+      console.log = originalLog;
+      console.warn = originalWarn;
    }
 }
 
