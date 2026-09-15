@@ -9,7 +9,7 @@ import { Storage } from '@quatrain/storage';
 import { ObjectUri } from '@quatrain/types';
 import { Readable } from 'node:stream';
 import { ContentItem } from './models/ContentItem';
-import { slugify, extractProperNouns } from './utils';
+import { slugify, extractProperNouns } from './utils/index';
 import { buildS3Key } from './category-mapper';
 import { searchAndCreateConcept } from './concept-autolink';
 import { gitSync } from './git-sync';

@@ -3,7 +3,7 @@ import { Storage } from '@quatrain/storage';
 import { Log } from '@quatrain/log';
 import { ApiClient } from '@quatrain/api-client';
 import { Readable } from 'node:stream';
-import { slugify } from './utils';
+import { slugify } from './utils/index';
 
 const wikiFrClient = new ApiClient('https://fr.wikipedia.org/api/rest_v1', 'wiki-fr');
 const wikiEnClient = new ApiClient('https://en.wikipedia.org/api/rest_v1', 'wiki-en');
