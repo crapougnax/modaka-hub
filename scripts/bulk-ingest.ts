@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * Bulk Ingestion CLI for Modaka-Hub — Standalone Edition.
+ * Bulk Ingestion CLI for Modaka-Hub.
  *
- * Runs outside Vite/Astro with ZERO dependency on @quatrain/* packages.
- * Uses @aws-sdk/client-s3 directly for Supabase S3 upload and writes
- * OKF markdown files directly to the Git repo on disk.
+ * Uses @quatrain/* packages (Storage, Storage-S3, Log, AI, AI-Gemini) via `yarn node --import tsx/esm`
+ * which enables proper Yarn PnP + TypeScript resolution.
  *
  * @example
  *   yarn bulk-ingest --dry-run ~/DOCUMENTS/BRAD/RAG
@@ -14,8 +13,15 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import * as os from 'node:os';
 import { execSync } from 'node:child_process';
+import { Readable } from 'node:stream';
 import dotenv from 'dotenv';
+import { Log } from '@quatrain/log';
+import { Storage } from '@quatrain/storage';
+import { S3StorageAdapter } from '@quatrain/storage-s3';
+import { Ai } from '@quatrain/ai';
+import { GeminiAdapter } from '@quatrain/ai-gemini';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -48,9 +54,39 @@ interface DedupEntry {
    s3Key?: string;
 }
 
+// ─── Path Resolution ───────────────────────────────────────────────────────────
+
+function resolvePath(p: string): string {
+   if (p.startsWith('~/')) {
+      return path.join(os.homedir(), p.slice(2));
+   }
+   if (p === '~') {
+      return os.homedir();
+   }
+   return path.resolve(p);
+}
+
 // ─── Argument Parsing ───────────────────────────────────────────────────────────
 
 const DEFAULT_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt'];
+
+function printUsage(exitCode = 1): void {
+   const print = exitCode === 0 ? console.log : console.error;
+   print('Usage: bulk-ingest [options] <source-directory>');
+   print('');
+   print('Options:');
+   print('  --category <cat>       Default OKF category');
+   print('  --soa <soa>            Source of Authority (default: bradtech/world-agronomy)');
+   print('  --concurrency <n>      Parallel tasks (default: 3)');
+   print('  --delay <ms>           Delay between tasks (default: 500)');
+   print('  --batch-commit <n>     Docs per Git commit (default: 50)');
+   print('  --extensions <list>    Comma-separated extensions (default: pdf,doc,docx,txt)');
+   print('  --skip-ai              Skip Gemini AI extraction');
+   print('  --dry-run              List files without ingesting');
+   print('  --resume               Skip already-ingested files');
+   print('  --help, -h             Show this help message');
+   process.exit(exitCode);
+}
 
 function parseArgs(argv: string[]): CliOptions {
    const args = argv.slice(2);
@@ -68,6 +104,10 @@ function parseArgs(argv: string[]): CliOptions {
 
    for (let i = 0; i < args.length; i++) {
       switch (args[i]) {
+         case '--help':
+         case '-h':
+            printUsage(0);
+            break;
          case '--category':
             opts.category = args[++i];
             break;
@@ -97,26 +137,14 @@ function parseArgs(argv: string[]): CliOptions {
             break;
          default:
             if (!args[i].startsWith('--')) {
-               opts.sourceDir = path.resolve(args[i]);
+               opts.sourceDir = resolvePath(args[i]);
             }
             break;
       }
    }
 
    if (!opts.sourceDir) {
-      console.error('Usage: bulk-ingest [options] <source-directory>');
-      console.error('');
-      console.error('Options:');
-      console.error('  --category <cat>       Default OKF category');
-      console.error('  --soa <soa>            Source of Authority');
-      console.error('  --concurrency <n>      Parallel tasks (default: 3)');
-      console.error('  --delay <ms>           Delay between tasks (default: 500)');
-      console.error('  --batch-commit <n>     Docs per Git commit (default: 50)');
-      console.error('  --extensions <list>    Comma-separated extensions (default: pdf,doc,docx,txt)');
-      console.error('  --skip-ai              Skip Gemini AI extraction');
-      console.error('  --dry-run              List files without ingesting');
-      console.error('  --resume               Skip already-ingested files');
-      process.exit(1);
+      printUsage(1);
    }
 
    return opts;
@@ -125,7 +153,6 @@ function parseArgs(argv: string[]): CliOptions {
 // ─── Slugify ────────────────────────────────────────────────────────────────────
 
 function slugify(text: string): string {
-   if (!text) return '';
    return text
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -200,14 +227,14 @@ class DedupCache {
    private cache: Map<string, DedupEntry> = new Map();
    private dirty = false;
 
-   constructor(private readonly filePath: string) {}
+   constructor(private filePath: string) {}
 
    async load(): Promise<void> {
       try {
          const raw = await fs.readFile(this.filePath, 'utf-8');
          const data = JSON.parse(raw) as Record<string, DedupEntry>;
          this.cache = new Map(Object.entries(data));
-         console.log(`  ℹ Dedup cache loaded: ${this.cache.size} known hashes`);
+         Log.info(`[DedupCache] Loaded ${this.cache.size} known hashes`);
       } catch {
          this.cache = new Map();
       }
@@ -227,6 +254,7 @@ class DedupCache {
       const data: Record<string, DedupEntry> = Object.fromEntries(this.cache);
       await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
       this.dirty = false;
+      Log.info(`[DedupCache] Saved ${this.cache.size} hashes`);
    }
 
    get size(): number {
@@ -234,46 +262,111 @@ class DedupCache {
    }
 }
 
-// ─── S3 Uploader (direct @aws-sdk, no Quatrain) ────────────────────────────────
+// ─── S3 Storage via @quatrain/storage-s3 ────────────────────────────────────────
 
-async function createS3Client() {
+async function initS3Storage(): Promise<boolean> {
    const endpoint = process.env.S3_ENDPOINT;
    const accessKey = process.env.S3_ACCESS_KEY;
    const secretKey = process.env.S3_SECRET_KEY;
    const region = process.env.S3_REGION || 'us-east-1';
+   const bucket = process.env.S3_BUCKET || 'world-agronomy';
 
    if (!endpoint || !accessKey || !secretKey) {
-      return null;
+      return false;
    }
 
-   const { S3Client } = await import('@aws-sdk/client-s3');
-   return new S3Client({
-      forcePathStyle: true,
-      region,
-      endpoint,
-      credentials: {
-         accessKeyId: accessKey,
-         secretAccessKey: secretKey,
+   const adapter = new S3StorageAdapter({
+      config: {
+         bucket,
+         endpoint,
+         region,
+         accesskey: accessKey,
+         secret: secretKey,
       },
    });
+
+   const connected = await adapter.test();
+   if (!connected) {
+      Log.warn('[Bulk Ingest] S3 test connection failed. Documents will be stored locally in Git.');
+      return false;
+   }
+
+   Storage.addStorage(adapter, 'document-storage', true);
+   return true;
 }
 
-async function uploadToS3(
-   s3: any,
-   bucket: string,
-   key: string,
-   buffer: Buffer,
-   contentType: string
-): Promise<void> {
-   const { PutObjectCommand } = await import('@aws-sdk/client-s3');
-   await s3.send(
-      new PutObjectCommand({
-         Bucket: bucket,
-         Key: key,
-         Body: buffer,
-         ContentType: contentType,
-      })
+async function uploadToS3(s3Key: string, buffer: Buffer, contentType: string): Promise<void> {
+   const bucket = process.env.S3_BUCKET || 'world-agronomy';
+   const storage = Storage.getStorage('document-storage');
+   const stream = Readable.from(buffer);
+   await storage.create(
+      { ref: s3Key, bucket, contentType } as any,
+      stream
    );
+}
+
+// ─── AI Semantic Analysis via @quatrain/ai ──────────────────────────────────────
+
+function initAi(): boolean {
+   const apiKey = process.env.GEMINI_API_KEY;
+   if (!apiKey) return false;
+   try {
+      Ai.setAdapter(new GeminiAdapter(apiKey));
+      return true;
+   } catch {
+      return false;
+   }
+}
+
+async function extractAiMetadata(rawText: string, filename: string): Promise<any> {
+   try {
+      const ai = Ai.getAdapter();
+      const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const prompt = `Extrais les métadonnées pour ce document agronomique.
+Fichier: ${filename}
+Contenu (extrait):
+${rawText.substring(0, 4000)}
+
+Réponds au format JSON strict avec les champs:
+- title: string (titre propre du document)
+- summary: string (résumé en 2-3 phrases)
+- category: string (choisis parmi: soil-health, cover-crops, viticulture, regenerative-agriculture, agroforesterie, soil-amendments, soil-biology, water-management, formations, agriculture, agronomie-livres, allelopathy, climate, food-systems, market-gardening, inbox)
+- thematics: string[]
+- soils: string[] (ex: argilo-calcaire, limoneux, sableux, vivant-microbiote)
+- climates: string[] (ex: mediterraneen, oceanique, continental, semi-aride)
+- itineraries: string[] (ex: viticulture-biologique, semis-direct, enherbement-permanent)
+- crops: string[]
+- tags: string[]
+- authors: string[]
+- publisher: string
+- publicationYear: string
+- language: string`;
+
+      const schema = {
+         type: 'object',
+         properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            category: { type: 'string' },
+            thematics: { type: 'array', items: { type: 'string' } },
+            soils: { type: 'array', items: { type: 'string' } },
+            climates: { type: 'array', items: { type: 'string' } },
+            itineraries: { type: 'array', items: { type: 'string' } },
+            crops: { type: 'array', items: { type: 'string' } },
+            tags: { type: 'array', items: { type: 'string' } },
+            authors: { type: 'array', items: { type: 'string' } },
+            publisher: { type: 'string' },
+            publicationYear: { type: 'string' },
+            language: { type: 'string' },
+         },
+         required: ['title', 'summary', 'category'],
+      };
+
+      return await (ai as any).generateStructured(prompt, schema, { model });
+   } catch (err: any) {
+      Log.warn(`[Bulk Ingest] AI extraction failed: ${err.message}. Using fallback heuristics.`);
+      return null;
+   }
 }
 
 // ─── OKF Document Writer ────────────────────────────────────────────────────────
@@ -305,7 +398,6 @@ async function writeOkfDocument(
 ): Promise<string> {
    const categoryDir = path.join(gitLocalPath, 'content', category);
    await fs.mkdir(categoryDir, { recursive: true });
-
    const frontmatter = buildOkfFrontmatter(metadata);
    const content = `${frontmatter}\n\n${body}\n`;
    const filePath = path.join(categoryDir, `${slug}.md`);
@@ -325,9 +417,8 @@ function gitStageAndCommit(gitLocalPath: string, files: string[], message: strin
          stdio: 'pipe',
       });
    } catch (err: any) {
-      // Silently ignore if nothing to commit
       if (!err.stderr?.toString().includes('nothing to commit')) {
-         console.error(`  ⚠ Git commit warning: ${err.message}`);
+         Log.warn(`[Git] Commit warning: ${err.message}`);
       }
    }
 }
@@ -449,11 +540,12 @@ async function main(): Promise<void> {
    for (const f of files) {
       extCounts.set(f.extension, (extCounts.get(f.extension) || 0) + 1);
    }
-   for (const [ext, count] of [...extCounts.entries()].sort((a, b) => b[1] - a[1])) {
+   for (const [ext, count] of extCounts.entries()) {
       console.log(`    .${ext}: ${count}`);
    }
    console.log('');
 
+   // Dry run mode: print preview and exit
    if (opts.dryRun) {
       const catCounts = new Map<string, number>();
       for (const f of files) {
@@ -476,12 +568,22 @@ async function main(): Promise<void> {
       process.exit(1);
    }
 
-   const s3Client = await createS3Client();
+   const useS3 = await initS3Storage();
    const s3Bucket = process.env.S3_BUCKET || 'world-agronomy';
-   if (s3Client) {
+   if (useS3) {
+      Log.info(`[Bulk Ingest] S3 storage configured via @quatrain/storage-s3 (bucket: ${s3Bucket})`);
       console.log(`  ✓ S3 storage configured (bucket: ${s3Bucket})`);
    } else {
       console.log('  ℹ No S3 config — documents will be stored locally in Git repo');
+   }
+
+   const useAi = !opts.skipAi && initAi();
+   if (useAi) {
+      const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      Log.info(`[Bulk Ingest] AI extraction enabled via @quatrain/ai-gemini (${model})`);
+      console.log(`  ✓ AI extraction enabled (${model})`);
+   } else if (!opts.skipAi) {
+      console.log('  ℹ No GEMINI_API_KEY found — falling back to heuristic extraction');
    }
 
    const revision = getGitRevision(gitLocalPath);
@@ -497,16 +599,34 @@ async function main(): Promise<void> {
    console.log('  ⏳ Processing files...');
    console.log('');
 
+   let cursor = 0;
+   let completed = 0;
    let ingested = 0;
    let skipped = 0;
    let errors = 0;
    const batchFiles: string[] = [];
    let batchCount = 0;
+   let commitQueue = Promise.resolve();
 
-   for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      printProgress(i + 1, files.length, ingested, skipped, errors);
+   function scheduleBatchCommit(force = false): Promise<void> {
+      commitQueue = commitQueue.then(async () => {
+         if ((batchCount >= opts.batchCommit && batchFiles.length > 0) || (force && batchFiles.length > 0)) {
+            const toCommit = [...batchFiles];
+            batchFiles.length = 0;
+            const count = batchCount;
+            batchCount = 0;
+            gitStageAndCommit(
+               gitLocalPath,
+               toCommit,
+               `feat(curation): bulk ingest ${count} documents`
+            );
+            await dedup.save();
+         }
+      });
+      return commitQueue;
+   }
 
+   async function processFile(file: ScanResult): Promise<void> {
       try {
          // Read and hash
          const buffer = await fs.readFile(file.absolutePath);
@@ -515,22 +635,10 @@ async function main(): Promise<void> {
          // Dedup check
          if (opts.resume && dedup.isKnown(hash)) {
             skipped++;
-            continue;
+            return;
          }
 
-         // Resolve category
-         const category = opts.category || resolveCategory(file.absolutePath, opts.sourceDir);
-
-         // Build title from filename
-         const rawTitle = path.basename(file.absolutePath, path.extname(file.absolutePath));
-         // Clean up Anna's Archive style filenames
-         const title = rawTitle
-            .replace(/ -- .*$/, '') // Remove everything after first " -- "
-            .replace(/_/g, ' ')
-            .trim();
-         const slug = slugify(title) || hash.substring(0, 12);
-
-         // Extract text for PDF
+         // Extract text for PDF or text files
          let rawText = '';
          const isPdf = file.extension === 'pdf';
          if (isPdf) {
@@ -543,22 +651,38 @@ async function main(): Promise<void> {
             }
          }
 
-         const summary = rawText
-            ? rawText.substring(0, 300).replace(/\s+/g, ' ').trim() + '...'
-            : 'Document agronomique ingéré.';
+         // Clean filename for title
+         const rawTitle = path.basename(file.absolutePath, path.extname(file.absolutePath));
+         const cleanTitle = rawTitle
+            .replace(/ -- .*$/, '')
+            .replace(/_/g, ' ')
+            .trim();
 
-         // S3 Upload
+         // AI multi-axial extraction or heuristics
+         let aiResult: any = null;
+         if (useAi && rawText) {
+            aiResult = await extractAiMetadata(rawText, path.basename(file.absolutePath));
+         }
+
+         const title = aiResult?.title || cleanTitle;
+         const slug = slugify(title) || hash.substring(0, 12);
+         const category = opts.category || aiResult?.category || resolveCategory(file.absolutePath, opts.sourceDir);
+         const summary = aiResult?.summary || (rawText
+            ? rawText.substring(0, 300).replace(/\s+/g, ' ').trim() + '...'
+            : 'Document agronomique ingéré.');
+
+         // S3 Upload via @quatrain/storage-s3
          const s3Key = buildS3Key(category, hash, path.basename(file.absolutePath));
          let originalFileUri: string;
 
-         if (s3Client) {
+         if (useS3) {
             try {
                const contentType = isPdf ? 'application/pdf' : 'application/octet-stream';
-               await uploadToS3(s3Client, s3Bucket, s3Key, buffer, contentType);
+               await uploadToS3(s3Key, buffer, contentType);
                originalFileUri = s3Key;
+               Log.info(`[Bulk Ingest] Uploaded to S3: ${s3Key}`);
             } catch (s3Err: any) {
-               console.error(`\n  ⚠ S3 upload failed for ${file.relativePath}: ${s3Err.message}`);
-               // Fallback: store locally
+               Log.error(`[Bulk Ingest] S3 upload failed: ${s3Err.message}. Falling back to local.`);
                const assetsDir = path.join(gitLocalPath, 'assets', 'documents');
                await fs.mkdir(assetsDir, { recursive: true });
                await fs.writeFile(path.join(assetsDir, path.basename(file.absolutePath)), buffer);
@@ -571,38 +695,38 @@ async function main(): Promise<void> {
             originalFileUri = `assets/documents/${path.basename(file.absolutePath)}`;
          }
 
-         // Write OKF document
-         const okfPath = await writeOkfDocument(gitLocalPath, category, slug, {
+         // Prepare OKF metadata
+         const metadata: Record<string, any> = {
             soa: opts.soa,
             revision,
             type: 'document',
             title,
             category,
-            tags: ['agronomie', 'curation', category],
-            thematics: [category],
+            tags: aiResult?.tags || ['agronomie', 'curation', category],
+            thematics: aiResult?.thematics || [category],
+            soils: aiResult?.soils,
+            climates: aiResult?.climates,
+            itineraries: aiResult?.itineraries,
+            crops: aiResult?.crops,
+            authors: aiResult?.authors,
+            publisher: aiResult?.publisher,
+            publicationYear: aiResult?.publicationYear,
             originalFileUri,
             fileHash: hash,
             source: `bulk-ingest:${file.relativePath}`,
-            language: 'fr',
+            language: aiResult?.language || 'fr',
             timestamp: new Date().toISOString(),
-         }, summary);
+         };
 
-         // Batch Git commit tracking
+         // Write OKF document
+         const okfPath = await writeOkfDocument(gitLocalPath, category, slug, metadata, summary);
+
+         // Batch Git tracking
          batchFiles.push(okfPath);
-         if (!s3Client) {
+         if (!useS3) {
             batchFiles.push(originalFileUri);
          }
          batchCount++;
-
-         if (batchCount >= opts.batchCommit) {
-            gitStageAndCommit(
-               gitLocalPath,
-               batchFiles,
-               `feat(curation): bulk ingest ${batchCount} documents`
-            );
-            batchFiles.length = 0;
-            batchCount = 0;
-         }
 
          // Register in dedup cache
          dedup.register(hash, {
@@ -613,32 +737,32 @@ async function main(): Promise<void> {
          });
 
          ingested++;
-
-         // Throttle
-         if (opts.delayMs > 0 && i < files.length - 1) {
-            await sleep(opts.delayMs);
-         }
-
-         // Periodic cache saves
-         if (ingested % 25 === 0) {
-            await dedup.save();
-         }
+         await scheduleBatchCommit(false);
       } catch (err: any) {
          errors++;
-         console.error(`\n  ✗ Error processing ${file.relativePath}: ${err.message}`);
+         Log.error(`[Bulk Ingest] Error processing ${file.relativePath}: ${err.message}`);
+      } finally {
+         completed++;
+         printProgress(completed, files.length, ingested, skipped, errors);
       }
    }
 
-   // Final batch commit
-   if (batchCount > 0) {
-      gitStageAndCommit(
-         gitLocalPath,
-         batchFiles,
-         `feat(curation): bulk ingest ${batchCount} documents`
-      );
-   }
+   const concurrency = Math.max(1, opts.concurrency);
+   const workers = Array.from({ length: Math.min(concurrency, files.length) }, async () => {
+      while (cursor < files.length) {
+         const index = cursor++;
+         const file = files[index];
+         await processFile(file);
+         if (opts.delayMs > 0) {
+            await sleep(opts.delayMs);
+         }
+      }
+   });
 
-   // Final cache save
+   await Promise.all(workers);
+
+   // Final batch commit & save
+   await scheduleBatchCommit(true);
    await dedup.save();
 
    console.log('');

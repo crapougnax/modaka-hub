@@ -18,7 +18,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "test": "vitest run",
-    "bulk-ingest": "tsx scripts/bulk-ingest.ts"
+    "bulk-ingest": "node --import tsx/esm scripts/bulk-ingest.ts"
   },
   "dependencies": {
     "@astrojs/node": "^9.0.0",

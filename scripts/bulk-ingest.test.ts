@@ -15,7 +15,7 @@ const TEST_DIR = path.resolve(__dirname, '../.test-bulk-ingest');
 /** Helper to run the CLI and capture output */
 function runCli(args: string): { stdout: string; exitCode: number } {
    try {
-      const stdout = execSync(`npx tsx ${CLI_PATH} ${args}`, {
+      const stdout = execSync(`yarn node --import tsx/esm ${CLI_PATH} ${args}`, {
          cwd: path.resolve(__dirname, '..'),
          encoding: 'utf-8',
          timeout: 30_000,
@@ -74,6 +74,12 @@ describe('bulk-ingest CLI', () => {
 
    afterAll(async () => {
       await fs.rm(TEST_DIR, { recursive: true, force: true });
+   });
+
+   it('should print usage and exit 0 with --help', () => {
+      const result = runCli('--help');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Usage: bulk-ingest');
    });
 
    it('should print usage when no arguments provided', () => {
