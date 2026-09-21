@@ -29,7 +29,7 @@ export async function searchAndCreateConcept(properNoun: string): Promise<void> 
    Log.info(`[Concept Auto-Link] Searching Wikipedia for concept "${properNoun}"...`);
    try {
       const pageSlug = encodeURIComponent(properNoun.replace(/ /g, '_'));
-      const headers = { 'User-Agent': 'AnemorphCurationAgent/1.0 (contact: developers@quatrain.com)' };
+      const headers = { 'User-Agent': 'ModakaHubCurationAgent/1.0 (contact: developers@quatrain.com)' };
 
       let data: any = null;
       try {
