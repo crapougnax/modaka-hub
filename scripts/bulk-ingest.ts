@@ -47,6 +47,8 @@ interface CliOptions {
    dryRun: boolean;
    resume: boolean;
    limit?: number;
+   minSizeBytes?: number;
+   sortBy?: 'size' | 'name';
 }
 
 interface ScanResult {
@@ -66,6 +68,17 @@ function resolvePath(p: string): string {
       return os.homedir();
    }
    return path.resolve(p);
+}
+
+function parseSize(s: string): number {
+   const m = s.trim().match(/^(\d+(?:\.\d+)?)\s*(b|kb|k|mb|m|gb|g)?$/i);
+   if (!m) return parseInt(s, 10) || 0;
+   const val = parseFloat(m[1]);
+   const unit = (m[2] || '').toLowerCase();
+   if (unit.startsWith('g')) return Math.round(val * 1024 * 1024 * 1024);
+   if (unit.startsWith('m')) return Math.round(val * 1024 * 1024);
+   if (unit.startsWith('k')) return Math.round(val * 1024);
+   return Math.round(val);
 }
 
 // ─── Argument Parsing ───────────────────────────────────────────────────────────
@@ -88,6 +101,8 @@ function printUsage(exitCode = 1): void {
    print('  --resume               Skip already-ingested files (default: true)');
    print('  --no-resume, --force   Force re-ingestion of all files');
    print('  --limit <n>            Maximum documents to ingest');
+   print('  --min-size <size>      Minimum file size filter (e.g. 5MB, 10M)');
+   print('  --sort-by <size|name>  Sort scanned files before processing (descending for size)');
    print('  --help, -h             Show this help message');
    process.exit(exitCode);
 }
@@ -130,6 +145,17 @@ function parseArgs(argv: string[]): CliOptions {
          case '--limit':
             opts.limit = parseInt(args[++i], 10);
             break;
+         case '--min-size':
+            opts.minSizeBytes = parseSize(args[++i]);
+            break;
+         case '--sort-by':
+         case '--sort': {
+            const sortVal = args[++i]?.toLowerCase();
+            if (sortVal === 'size' || sortVal === 'name') {
+               opts.sortBy = sortVal;
+            }
+            break;
+         }
          case '--extensions':
             opts.extensions = args[++i].split(',').map((e) => e.trim().toLowerCase());
             break;
@@ -181,7 +207,19 @@ function slugify(text: string): string {
 
 const DIRECTORY_RULES: Array<{ pattern: string; category: string }> = [
    { pattern: 'biblio agro/couvert', category: 'cover-crops' },
+   { pattern: 'couverts permanents', category: 'cover-crops' },
+   { pattern: 'couvert', category: 'cover-crops' },
    { pattern: 'biblio agro/formations', category: 'formations' },
+   { pattern: 'formations', category: 'formations' },
+   { pattern: 'docs chambre _ ceta', category: 'soil-health' },
+   { pattern: 'analyses sol', category: 'soil-health' },
+   { pattern: 'compaction _ erosion', category: 'soil-health' },
+   { pattern: 'guide culture', category: 'crops' },
+   { pattern: 'phytos', category: 'plant-protection' },
+   { pattern: 'fertilisation', category: 'soil-amendments' },
+   { pattern: 'biostim', category: 'soil-amendments' },
+   { pattern: 'elevage', category: 'livestock' },
+   { pattern: 'arvalis', category: 'agriculture' },
    { pattern: 'biblio agro', category: 'soil-health' },
    { pattern: 'livres agronomie/compost', category: 'soil-amendments' },
    { pattern: 'livres agronomie', category: 'agronomie-livres' },
@@ -209,10 +247,15 @@ const FILENAME_RULES: Array<{ keywords: string[]; category: string }> = [
 function resolveCategory(absoluteFilePath: string, scanRoot: string): string {
    const relativePath = path.relative(scanRoot, absoluteFilePath);
    const relativeDir = path.dirname(relativePath).toLowerCase();
+   const fullPathLower = absoluteFilePath.toLowerCase();
    const filename = path.basename(relativePath).toLowerCase();
 
    for (const rule of DIRECTORY_RULES) {
-      if (relativeDir.startsWith(rule.pattern) || relativeDir.includes(rule.pattern)) {
+      if (
+         relativeDir.startsWith(rule.pattern) ||
+         relativeDir.includes(rule.pattern) ||
+         fullPathLower.includes(rule.pattern)
+      ) {
          return rule.category;
       }
    }
@@ -304,9 +347,23 @@ function getGitRevision(gitLocalPath: string): string {
    }
 }
 
-// ─── Directory Scanner ──────────────────────────────────────────────────────────
-
 async function scanDirectory(dir: string, extensions: Set<string>): Promise<ScanResult[]> {
+   const stat = await fs.stat(dir);
+   if (stat.isFile()) {
+      const ext = path.extname(dir).toLowerCase().replace('.', '');
+      if (extensions.has(ext)) {
+         return [
+            {
+               absolutePath: dir,
+               relativePath: path.basename(dir),
+               extension: ext,
+               sizeBytes: stat.size,
+            },
+         ];
+      }
+      return [];
+   }
+
    const results: ScanResult[] = [];
 
    async function walk(current: string, root: string): Promise<void> {
@@ -395,11 +452,19 @@ async function main(): Promise<void> {
    console.log('');
 
    // Phase 1: Scan
-   console.log('  ⏳ Scanning directory...');
-   const files = await scanDirectory(opts.sourceDir, extensions);
+   console.log('  ⏳ Scanning files...');
+   let files = await scanDirectory(opts.sourceDir, extensions);
+   if (opts.minSizeBytes) {
+      files = files.filter((f) => f.sizeBytes >= opts.minSizeBytes!);
+   }
+   if (opts.sortBy === 'size') {
+      files.sort((a, b) => b.sizeBytes - a.sizeBytes);
+   } else if (opts.sortBy === 'name') {
+      files.sort((a, b) => a.absolutePath.localeCompare(b.absolutePath));
+   }
    const totalSize = files.reduce((sum, f) => sum + f.sizeBytes, 0);
    const sizeMB = (totalSize / (1024 * 1024)).toFixed(1);
-   console.log(`  ✓ Found ${files.length} files (${sizeMB} MB)`);
+   console.log(`  ✓ Found ${files.length} matching files (${sizeMB} MB)`);
    console.log('');
 
    // Extension breakdown
