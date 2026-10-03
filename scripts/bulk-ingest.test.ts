@@ -66,6 +66,10 @@ describe('bulk-ingest CLI', () => {
          'La viticulture biologique en AOC Ventoux combine enherbement permanent et faible utilisation d\'intrants.'
       );
 
+      // Copy a real PDF into sampleDir
+      const pdfSource = path.resolve(__dirname, '../MODAKA_HUB_ARCHITECTURE.pdf');
+      await fs.copyFile(pdfSource, path.join(sampleDir, 'modaka-architecture.pdf'));
+
       // Initialize a Git repo for commit tests
       execSync('git init && git add -A && git commit -m "init" --allow-empty', {
          cwd: TEST_DIR,
@@ -127,16 +131,28 @@ describe('bulk-ingest CLI', () => {
          for (const f of files) {
             if (f.endsWith('.md')) {
                foundMd = true;
-               // Verify OKF frontmatter
                const content = await fs.readFile(path.join(catDir, f), 'utf-8');
+               // Verify OKF v0.2 frontmatter
                expect(content).toContain('---');
+               expect(content).toContain('# --- Open Knowledge Format v0.2 ---');
                expect(content).toContain('soa: test/bulk-ingest');
                expect(content).toContain('type: document');
+               expect(content).toContain('status: draft');
+               expect(content).toContain('description:');
+               expect(content).toContain('sources:');
+
+               // CRITICAL BUG VERIFICATION: Body must contain extracted document text!
+               if (f.includes('sol-vivant-intro')) {
+                  expect(content).toContain('Le sol vivant est un écosystème complexe composé de micro-organismes');
+               }
+               if (f.includes('pedologie-bases')) {
+                  expect(content).toContain('La pédologie étudie la formation, la classification');
+               }
             }
          }
       }
       expect(foundMd).toBe(true);
-   });
+   }, 20_000);
 
    it('should skip already-ingested files in resume mode', async () => {
       const samplesDir = path.join(TEST_DIR, 'samples');
@@ -155,4 +171,35 @@ describe('bulk-ingest CLI', () => {
       const log = execSync('git log --oneline', { cwd: TEST_DIR, encoding: 'utf-8' });
       expect(log).toContain('bulk ingest');
    });
+
+   it('should extract full text from a real PDF and write it into the OKF body', async () => {
+      const samplesDir = path.join(TEST_DIR, 'samples');
+      const result = runCli(`--extensions pdf --batch-commit 1 --delay 0 --skip-ai ${samplesDir}`);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Ingested:');
+
+      // Verify that the generated markdown contains text from the PDF
+      const contentDir = path.join(TEST_DIR, 'content');
+      let pdfMdFound = false;
+      const categories = await fs.readdir(contentDir);
+      for (const cat of categories) {
+         const catDir = path.join(contentDir, cat);
+         if (!(await fs.stat(catDir)).isDirectory()) continue;
+         const files = await fs.readdir(catDir);
+         for (const f of files) {
+            if (f.includes('modaka-architecture') && f.endsWith('.md')) {
+               pdfMdFound = true;
+               const content = await fs.readFile(path.join(catDir, f), 'utf-8');
+               expect(content).toContain('Architecture & Vision Stratégique');
+               expect(content).toContain('Modaka-Hub');
+               expect(content).toContain('# --- Open Knowledge Format v0.2 ---');
+               expect(content).toContain('type: document');
+               expect(content).toContain('status: draft');
+               expect(content).toContain('description:');
+               expect(content).toContain('sources:');
+            }
+         }
+      }
+      expect(pdfMdFound).toBe(true);
+   }, 20_000);
 });

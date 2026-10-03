@@ -2,8 +2,11 @@
 /**
  * Bulk Ingestion CLI for Modaka-Hub.
  *
- * Uses @quatrain/* packages (Storage, Storage-S3, Log, AI, AI-Gemini) executed natively via Bun.
- * which enables proper Yarn PnP + TypeScript resolution.
+ * Powered by @quatrain/okf-ingest:
+ * - Full text & multimodal PDF extraction
+ * - Visual schema & Mermaid diagram transcription
+ * - Exact token accounting and USD cost computation
+ * - Open Knowledge Format (OKF v0.2) packaging
  *
  * @example
  *   yarn bulk-ingest --dry-run ~/DOCUMENTS/BRAD/RAG
@@ -20,8 +23,13 @@ import dotenv from 'dotenv';
 import { Log } from '@quatrain/log';
 import { Storage } from '@quatrain/storage';
 import { S3StorageAdapter } from '@quatrain/storage-s3';
-import { Ai } from '@quatrain/ai';
-import { GeminiAdapter } from '@quatrain/ai-gemini';
+import {
+   extractPdfText,
+   extractSemanticContent,
+   writeOkfDocument,
+   OkfDedupCache,
+   OkfFrontmatterV2,
+} from '@quatrain/okf-ingest';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -45,13 +53,6 @@ interface ScanResult {
    relativePath: string;
    extension: string;
    sizeBytes: number;
-}
-
-interface DedupEntry {
-   filename: string;
-   ingestedAt: string;
-   category: string;
-   s3Key?: string;
 }
 
 // ─── Path Resolution ───────────────────────────────────────────────────────────
@@ -226,80 +227,6 @@ function buildS3Key(category: string, hash: string, filename: string): string {
    return `originals/${category}/${hash8}-${slug}${ext}`;
 }
 
-// ─── Dedup Cache ────────────────────────────────────────────────────────────────
-
-class DedupCache {
-   private cache: Map<string, DedupEntry> = new Map();
-   private dirty = false;
-
-   constructor(private filePath: string) {}
-
-   async load(): Promise<void> {
-      try {
-         const raw = await fs.readFile(this.filePath, 'utf-8');
-         const data = JSON.parse(raw) as Record<string, DedupEntry>;
-         this.cache = new Map(Object.entries(data));
-         Log.info(`[DedupCache] Loaded ${this.cache.size} known hashes`);
-      } catch {
-         this.cache = new Map();
-      }
-   }
-
-   isKnown(hash: string): boolean {
-      return this.cache.has(hash);
-   }
-
-   register(hash: string, entry: DedupEntry): void {
-      this.cache.set(hash, entry);
-      this.dirty = true;
-   }
-
-   async save(): Promise<void> {
-      if (!this.dirty) return;
-      const data: Record<string, DedupEntry> = Object.fromEntries(this.cache);
-      await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
-      this.dirty = false;
-      Log.info(`[DedupCache] Saved ${this.cache.size} hashes`);
-   }
-
-   async syncFromGitRepo(gitLocalPath: string): Promise<number> {
-      let importedCount = 0;
-      try {
-         const contentDir = path.join(gitLocalPath, 'content');
-         const entries = await fs.readdir(contentDir, { withFileTypes: true });
-         for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            const categoryDir = path.join(contentDir, entry.name);
-            const files = await fs.readdir(categoryDir);
-            for (const f of files) {
-               if (!f.endsWith('.md') || f === 'index.md') continue;
-               try {
-                  const content = await fs.readFile(path.join(categoryDir, f), 'utf-8');
-                  const match = content.match(/fileHash:\s*([a-f0-9]{64})/i);
-                  if (match && !this.cache.has(match[1])) {
-                     this.cache.set(match[1], {
-                        filename: f,
-                        ingestedAt: 'git-repo',
-                        category: entry.name,
-                     });
-                     importedCount++;
-                  }
-               } catch {}
-            }
-         }
-         if (importedCount > 0) {
-            this.dirty = true;
-            Log.info(`[DedupCache] Synced ${importedCount} existing fiches from Git repo`);
-         }
-      } catch {}
-      return importedCount;
-   }
-
-   get size(): number {
-      return this.cache.size;
-   }
-}
-
 // ─── S3 Storage via @quatrain/storage-s3 ────────────────────────────────────────
 
 async function initS3Storage(): Promise<boolean> {
@@ -343,106 +270,6 @@ async function uploadToS3(s3Key: string, buffer: Buffer, contentType: string): P
    );
 }
 
-// ─── AI Semantic Analysis via @quatrain/ai ──────────────────────────────────────
-
-function initAi(): boolean {
-   const apiKey = process.env.GEMINI_API_KEY;
-   if (!apiKey) return false;
-   try {
-      Ai.setAdapter(new GeminiAdapter(apiKey));
-      return true;
-   } catch {
-      return false;
-   }
-}
-
-async function extractAiMetadata(rawText: string, filename: string): Promise<any> {
-   try {
-      const ai = Ai.getAdapter();
-      const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-      const prompt = `Extrais les métadonnées pour ce document agronomique.
-Fichier: ${filename}
-Contenu (extrait):
-${rawText.substring(0, 4000)}
-
-Réponds au format JSON strict avec les champs:
-- title: string (titre propre du document)
-- summary: string (résumé en 2-3 phrases)
-- category: string (choisis parmi: soil-health, cover-crops, viticulture, regenerative-agriculture, agroforesterie, soil-amendments, soil-biology, water-management, formations, agriculture, agronomie-livres, allelopathy, climate, food-systems, market-gardening, inbox)
-- thematics: string[]
-- soils: string[] (ex: argilo-calcaire, limoneux, sableux, vivant-microbiote)
-- climates: string[] (ex: mediterraneen, oceanique, continental, semi-aride)
-- itineraries: string[] (ex: viticulture-biologique, semis-direct, enherbement-permanent)
-- crops: string[]
-- tags: string[]
-- authors: string[]
-- publisher: string
-- publicationYear: string
-- language: string`;
-
-      const schema = {
-         type: 'object',
-         properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            category: { type: 'string' },
-            thematics: { type: 'array', items: { type: 'string' } },
-            soils: { type: 'array', items: { type: 'string' } },
-            climates: { type: 'array', items: { type: 'string' } },
-            itineraries: { type: 'array', items: { type: 'string' } },
-            crops: { type: 'array', items: { type: 'string' } },
-            tags: { type: 'array', items: { type: 'string' } },
-            authors: { type: 'array', items: { type: 'string' } },
-            publisher: { type: 'string' },
-            publicationYear: { type: 'string' },
-            language: { type: 'string' },
-         },
-         required: ['title', 'summary', 'category'],
-      };
-
-      return await (ai as any).generateStructured(prompt, schema, { model });
-   } catch (err: any) {
-      Log.warn(`[Bulk Ingest] AI extraction failed: ${err.message}. Using fallback heuristics.`);
-      return null;
-   }
-}
-
-// ─── OKF Document Writer ────────────────────────────────────────────────────────
-
-function buildOkfFrontmatter(fields: Record<string, any>): string {
-   const lines: string[] = ['---'];
-   for (const [key, value] of Object.entries(fields)) {
-      if (value === undefined || value === null || value === '') continue;
-      if (Array.isArray(value)) {
-         if (value.length === 0) continue;
-         lines.push(`${key}:`);
-         for (const item of value) {
-            lines.push(`  - ${item}`);
-         }
-      } else {
-         lines.push(`${key}: ${value}`);
-      }
-   }
-   lines.push('---');
-   return lines.join('\n');
-}
-
-async function writeOkfDocument(
-   gitLocalPath: string,
-   category: string,
-   slug: string,
-   metadata: Record<string, any>,
-   body: string
-): Promise<string> {
-   const categoryDir = path.join(gitLocalPath, 'content', category);
-   await fs.mkdir(categoryDir, { recursive: true });
-   const frontmatter = buildOkfFrontmatter(metadata);
-   const content = `${frontmatter}\n\n${body}\n`;
-   const filePath = path.join(categoryDir, `${slug}.md`);
-   await fs.writeFile(filePath, content, 'utf-8');
-   return `content/${category}/${slug}.md`;
-}
-
 // ─── Git Operations ─────────────────────────────────────────────────────────────
 
 function gitStageAndCommit(gitLocalPath: string, files: string[], message: string): void {
@@ -469,40 +296,6 @@ function getGitRevision(gitLocalPath: string): string {
       return `rev-${hash}`;
    } catch {
       return 'rev-1.0.0';
-   }
-}
-
-// ─── PDF Text Extraction ────────────────────────────────────────────────────────
-
-async function extractPdfText(buffer: Buffer): Promise<string> {
-   const originalLog = console.log;
-   const originalWarn = console.warn;
-
-   // Filter out noisy pdf.js internal warnings (e.g. font private use area)
-   const filterWarning = (origFn: (...args: any[]) => void) => (...args: any[]) => {
-      const msg = typeof args[0] === 'string' ? args[0] : '';
-      if (
-         msg.includes('private use area') ||
-         msg.includes('Ran out of space in font') ||
-         msg.startsWith('Warning: ')
-      ) {
-         return;
-      }
-      origFn(...args);
-   };
-
-   console.log = filterWarning(originalLog);
-   console.warn = filterWarning(originalWarn);
-
-   try {
-      const pdfParse = (await import('pdf-parse')).default;
-      const parsed = await pdfParse(buffer);
-      return parsed.text || '';
-   } catch {
-      return '';
-   } finally {
-      console.log = originalLog;
-      console.warn = originalWarn;
    }
 }
 
@@ -540,13 +333,22 @@ async function scanDirectory(dir: string, extensions: Set<string>): Promise<Scan
 
 // ─── Progress Display ───────────────────────────────────────────────────────────
 
-function printProgress(current: number, total: number, ingested: number, skipped: number, errors: number): void {
+function printProgress(
+   current: number,
+   total: number,
+   ingested: number,
+   skipped: number,
+   errors: number,
+   totalTokens: number,
+   totalCostUsd: number
+): void {
    const pct = Math.round((current / total) * 100);
-   const barLen = 30;
+   const barLen = 25;
    const filled = Math.round((current / total) * barLen);
    const bar = '█'.repeat(filled) + '░'.repeat(barLen - filled);
+   const tokensStr = totalTokens > 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : `${totalTokens}`;
    process.stdout.write(
-      `\r  ${bar} ${pct}% (${current}/${total}) | ✓ ${ingested} | ⊘ ${skipped} | ✗ ${errors}`
+      `\r  ${bar} ${pct}% (${current}/${total}) | ✓ ${ingested} | ⊘ ${skipped} | ✗ ${errors} | Tokens: ${tokensStr} ($${totalCostUsd.toFixed(4)})`
    );
 }
 
@@ -575,7 +377,7 @@ async function main(): Promise<void> {
 
    console.log('');
    console.log('┌─────────────────────────────────────────────────────────┐');
-   console.log('│          Modaka-Hub Bulk Ingestion CLI                  │');
+   console.log('│          Modaka-Hub Bulk Ingestion CLI (OKF v0.2)       │');
    console.log('└─────────────────────────────────────────────────────────┘');
    console.log('');
    console.log(`  Source:       ${opts.sourceDir}`);
@@ -605,7 +407,7 @@ async function main(): Promise<void> {
    }
    console.log('');
 
-   // Dry run mode: print preview and exit
+   // Dry run mode
    if (opts.dryRun) {
       const catCounts = new Map<string, number>();
       for (const f of files) {
@@ -637,11 +439,13 @@ async function main(): Promise<void> {
       console.log('  ℹ No S3 config — documents will be stored locally in Git repo');
    }
 
-   const useAi = !opts.skipAi && initAi();
+   const geminiApiKey = process.env.GEMINI_API_KEY;
+   const useAi = !opts.skipAi && Boolean(geminiApiKey);
+   const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
    if (useAi) {
-      const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-      Log.info(`[Bulk Ingest] AI extraction enabled via @quatrain/ai-gemini (${model})`);
-      console.log(`  ✓ AI extraction enabled (${model})`);
+      Log.info(`[Bulk Ingest] AI extraction enabled via @quatrain/okf-ingest (${model})`);
+      console.log(`  ✓ AI extraction & Mermaid schema transcription enabled (${model})`);
    } else if (!opts.skipAi) {
       console.log('  ℹ No GEMINI_API_KEY found — falling back to heuristic extraction');
    }
@@ -652,7 +456,7 @@ async function main(): Promise<void> {
 
    // Phase 3: Load dedup cache
    const cachePath = process.env.DEDUP_CACHE_PATH || path.resolve(process.cwd(), '.modaka-hub-hashes.json');
-   const dedup = new DedupCache(cachePath);
+   const dedup = new OkfDedupCache(cachePath);
    await dedup.load();
    const syncedFromGit = await dedup.syncFromGitRepo(gitLocalPath);
    if (syncedFromGit > 0) {
@@ -672,6 +476,11 @@ async function main(): Promise<void> {
    let ingested = 0;
    let skipped = 0;
    let errors = 0;
+   let runningTokens = 0;
+   let runningCostUsd = 0;
+   let totalDiagrams = 0;
+   let totalTables = 0;
+
    const batchFiles: string[] = [];
    let batchCount = 0;
    let commitQueue = Promise.resolve();
@@ -721,9 +530,13 @@ async function main(): Promise<void> {
 
          // Extract text for PDF or text files
          let rawText = '';
+         let isScanned = false;
          const isPdf = file.extension === 'pdf';
+
          if (isPdf) {
-            rawText = await extractPdfText(buffer);
+            const pdfResult = await extractPdfText(buffer);
+            rawText = pdfResult.text;
+            isScanned = pdfResult.isScanned;
          } else {
             try {
                rawText = buffer.toString('utf-8');
@@ -732,23 +545,48 @@ async function main(): Promise<void> {
             }
          }
 
-         // Clean filename for title
+         // Clean filename for title fallback
          const rawTitle = path.basename(file.absolutePath, path.extname(file.absolutePath));
          const cleanTitle = rawTitle
             .replace(/ -- .*$/, '')
             .replace(/_/g, ' ')
             .trim();
 
-         // AI multi-axial extraction or heuristics
+         // AI extraction via @quatrain/okf-ingest
          let aiResult: any = null;
-         if (useAi && rawText) {
-            aiResult = await extractAiMetadata(rawText, path.basename(file.absolutePath));
+         if (useAi && geminiApiKey) {
+            try {
+               aiResult = await extractSemanticContent(
+                  {
+                     buffer,
+                     rawText,
+                     filename: path.basename(file.absolutePath),
+                     isPdf,
+                     isScanned,
+                  },
+                  geminiApiKey,
+                  {
+                     model,
+                     soa: opts.soa,
+                     defaultCategory: opts.category || resolveCategory(file.absolutePath, opts.sourceDir),
+                  }
+               );
+
+               if (aiResult.usage) {
+                  runningTokens += aiResult.usage.total;
+                  runningCostUsd += aiResult.usage.costUsd;
+               }
+               totalDiagrams += aiResult.diagramsTranscribed || 0;
+               totalTables += aiResult.tablesTranscribed || 0;
+            } catch (aiErr: any) {
+               Log.warn(`[Bulk Ingest] AI extraction warning on ${file.relativePath}: ${aiErr.message}`);
+            }
          }
 
-         const title = aiResult?.title || cleanTitle;
+         const title = aiResult?.metadata?.title || cleanTitle;
          const slug = slugify(title) || hash.substring(0, 12);
-         const category = opts.category || aiResult?.category || resolveCategory(file.absolutePath, opts.sourceDir);
-         const summary = aiResult?.summary || (rawText
+         const category = opts.category || aiResult?.metadata?.category || resolveCategory(file.absolutePath, opts.sourceDir);
+         const description = aiResult?.metadata?.description || (rawText
             ? rawText.substring(0, 300).replace(/\s+/g, ' ').trim() + '...'
             : 'Document agronomique ingéré.');
 
@@ -776,31 +614,55 @@ async function main(): Promise<void> {
             originalFileUri = `assets/documents/${path.basename(file.absolutePath)}`;
          }
 
-         // Prepare OKF metadata
-         const metadata: Record<string, any> = {
+         // Prepare OKF v0.2 metadata
+         const metadata: OkfFrontmatterV2 = {
+            type: aiResult?.metadata?.type || 'document',
+            title,
+            description,
+            tags: aiResult?.metadata?.tags || ['agronomie', 'curation', category],
+            status: 'draft',
+            generated: {
+               by: `quatrain/okf-ingest (${model})`,
+               at: new Date().toISOString(),
+               tokens: aiResult?.usage,
+            },
+            sources: [
+               {
+                  id: 'original-file',
+                  resource: originalFileUri,
+                  title: path.basename(file.absolutePath),
+                  fileHash: hash,
+               },
+            ],
             soa: opts.soa,
             revision,
-            type: 'document',
-            title,
             category,
-            tags: aiResult?.tags || ['agronomie', 'curation', category],
-            thematics: aiResult?.thematics || [category],
-            soils: aiResult?.soils,
-            climates: aiResult?.climates,
-            itineraries: aiResult?.itineraries,
-            crops: aiResult?.crops,
-            authors: aiResult?.authors,
-            publisher: aiResult?.publisher,
-            publicationYear: aiResult?.publicationYear,
+            thematics: aiResult?.metadata?.thematics || [category],
+            soils: aiResult?.metadata?.soils,
+            climates: aiResult?.metadata?.climates,
+            itineraries: aiResult?.metadata?.itineraries,
+            crops: aiResult?.metadata?.crops,
+            authors: aiResult?.metadata?.authors,
+            publisher: aiResult?.metadata?.publisher,
+            publicationYear: aiResult?.metadata?.publicationYear,
             originalFileUri,
             fileHash: hash,
             source: `bulk-ingest:${file.relativePath}`,
-            language: aiResult?.language || 'fr',
+            language: aiResult?.metadata?.language || 'fr',
             timestamp: new Date().toISOString(),
          };
 
-         // Write OKF document
-         const okfPath = await writeOkfDocument(gitLocalPath, category, slug, metadata, summary);
+         // Final document body: Extracted full text + transcribed Mermaid diagrams
+         const bodyContent = aiResult?.body || (rawText.trim() ? `# ${title}\n\n${rawText.trim()}` : `# ${title}\n\n${description}`);
+
+         // Write OKF v0.2 document
+         const okfPath = await writeOkfDocument({
+            gitLocalPath,
+            category,
+            slug,
+            metadata,
+            body: bodyContent,
+         });
 
          // Batch Git tracking
          batchFiles.push(okfPath);
@@ -809,12 +671,13 @@ async function main(): Promise<void> {
          }
          batchCount++;
 
-         // Register in dedup cache
+         // Register in dedup cache with token cost
          dedup.register(hash, {
             filename: path.basename(file.absolutePath),
             ingestedAt: new Date().toISOString(),
             category,
             s3Key,
+            tokens: aiResult?.usage,
          });
 
          ingested++;
@@ -824,7 +687,7 @@ async function main(): Promise<void> {
          Log.error(`[Bulk Ingest] Error processing ${file.relativePath}: ${err.message}`);
       } finally {
          completed++;
-         printProgress(completed, files.length, ingested, skipped, errors);
+         printProgress(completed, files.length, ingested, skipped, errors, runningTokens, runningCostUsd);
       }
    }
 
@@ -849,14 +712,20 @@ async function main(): Promise<void> {
    console.log('');
    console.log('');
    console.log('  ┌─────────────────────────────────────────────┐');
-   console.log('  │  Bulk Ingestion Complete                    │');
+   console.log('  │  Bulk Ingestion Complete (OKF v0.2)         │');
    console.log('  └─────────────────────────────────────────────┘');
-   console.log(`  ✓ Ingested:  ${ingested}`);
-   console.log(`  ⊘ Skipped:   ${skipped}`);
-   console.log(`  ✗ Errors:    ${errors}`);
-   console.log(`  Total:       ${files.length}`);
+   console.log(`  ✓ Ingested:          ${ingested}`);
+   console.log(`  ⊘ Skipped:           ${skipped}`);
+   console.log(`  ✗ Errors:            ${errors}`);
+   console.log(`  Total files:         ${files.length}`);
+   console.log('  ---------------------------------------------');
+   console.log(`  Total Tokens:        ${runningTokens.toLocaleString('fr-FR')}`);
+   console.log(`  Total AI Cost:       $${runningCostUsd.toFixed(4)} USD`);
+   if (totalDiagrams > 0 || totalTables > 0) {
+      console.log(`  Transcribed Schemas: ${totalDiagrams} Mermaid diagrams, ${totalTables} Markdown tables`);
+   }
    if (dedup.size > 0) {
-      console.log(`  ℹ Dedup cache: ${dedup.size} hashes saved`);
+      console.log(`  ℹ Dedup cache:       ${dedup.size} hashes saved`);
    }
    console.log('');
 }

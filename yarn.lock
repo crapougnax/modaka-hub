@@ -1306,13 +1306,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@faker-js/faker@npm:^7.6.0":
-  version: 7.6.0
-  resolution: "@faker-js/faker@npm:7.6.0"
-  checksum: 10c0/8f0e0588b1327563aba3bf71d859eb52575c6e34f9d259f63dfa3c3ba7eea910588395399f2531753f1b7b730c06e0ef79336634361b2e69445ed69123e019eb
-  languageName: node
-  linkType: hard
-
 "@floating-ui/core@npm:^1.8.0":
   version: 1.8.0
   resolution: "@floating-ui/core@npm:1.8.0"
@@ -1989,8 +1982,8 @@ __metadata:
   resolution: "@quatrain/ai-gemini@portal:../../QUATRAIN/Core/packages/ai-gemini::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
   dependencies:
     "@google/genai": "npm:latest"
-    "@quatrain/ai": "npm:^1.1.4"
-    "@quatrain/core": "npm:^1.2.18"
+    "@quatrain/ai": "workspace:*"
+    "@quatrain/core": "workspace:*"
   languageName: node
   linkType: soft
 
@@ -1998,7 +1991,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@quatrain/ai@portal:../../QUATRAIN/Core/packages/ai::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
   dependencies:
-    "@quatrain/core": "npm:^1.2.18"
+    "@quatrain/core": "workspace:*"
   languageName: node
   linkType: soft
 
@@ -2045,6 +2038,9 @@ __metadata:
 "@quatrain/auth-rbac@portal:../../QUATRAIN/Core/packages/auth-rbac::locator=%40quatrain%2Fmodaka-hub%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@quatrain/auth-rbac@portal:../../QUATRAIN/Core/packages/auth-rbac::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
+  dependencies:
+    "@quatrain/api": "workspace:*"
+    "@quatrain/http": "workspace:*"
   languageName: node
   linkType: soft
 
@@ -2053,8 +2049,8 @@ __metadata:
   resolution: "@quatrain/auth@portal:../../QUATRAIN/Core/packages/auth::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
   dependencies:
     "@quatrain/api": "workspace:*"
-    "@quatrain/backend": "npm:^1.2.20"
-    "@quatrain/core": "npm:^1.2.18"
+    "@quatrain/backend": "workspace:*"
+    "@quatrain/core": "workspace:*"
     "@quatrain/http": "workspace:*"
   languageName: node
   linkType: soft
@@ -2063,7 +2059,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@quatrain/backend@portal:../../QUATRAIN/Core/packages/backend::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
   dependencies:
-    "@faker-js/faker": "npm:^7.6.0"
     "@quatrain/core": "workspace:*"
     "@quatrain/log": "workspace:*"
     "@quatrain/types": "workspace:*"
@@ -2162,6 +2157,7 @@ __metadata:
     "@quatrain/ingestion-web": "npm:^1.0.1"
     "@quatrain/log": "npm:^1.2.4"
     "@quatrain/okf": "npm:^1.0.4"
+    "@quatrain/okf-ingest": "portal:../../QUATRAIN/Core/packages/okf-ingest"
     "@quatrain/queue": "npm:^1.2.3"
     "@quatrain/queue-sqlite": "npm:^1.0.1"
     "@quatrain/searchengine": "npm:^1.0.0"
@@ -2196,6 +2192,20 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@quatrain/okf-ingest@portal:../../QUATRAIN/Core/packages/okf-ingest::locator=%40quatrain%2Fmodaka-hub%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@quatrain/okf-ingest@portal:../../QUATRAIN/Core/packages/okf-ingest::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
+  dependencies:
+    "@google/genai": "npm:latest"
+    "@quatrain/ai": "workspace:*"
+    "@quatrain/ai-gemini": "workspace:*"
+    "@quatrain/core": "workspace:*"
+    "@quatrain/log": "workspace:*"
+    pdf-parse: "npm:^1.1.1"
+    yaml: "npm:^2.4.0"
+  languageName: node
+  linkType: soft
+
 "@quatrain/okf@portal:../../QUATRAIN/Core/packages/okf::locator=%40quatrain%2Fmodaka-hub%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@quatrain/okf@portal:../../QUATRAIN/Core/packages/okf::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
@@ -2223,7 +2233,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@quatrain/queue@portal:../../QUATRAIN/Core/packages/queue::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
   dependencies:
-    "@quatrain/core": "npm:^1.2.18"
+    "@quatrain/core": "workspace:*"
     fs-extra: "npm:^11.2.0"
   languageName: node
   linkType: soft
@@ -2260,7 +2270,7 @@ __metadata:
   dependencies:
     "@aws-sdk/client-s3": "npm:^3.337.0"
     "@aws-sdk/s3-request-presigner": "npm:^3.342.0"
-    "@quatrain/storage": "npm:^1.2.14"
+    "@quatrain/storage": "workspace:*"
     fs-extra: "npm:^11.2.0"
   languageName: node
   linkType: soft
@@ -2269,7 +2279,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@quatrain/storage@portal:../../QUATRAIN/Core/packages/storage::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
   dependencies:
-    "@quatrain/core": "npm:^1.2.18"
+    "@quatrain/core": "workspace:*"
     fs-extra: "npm:^11.2.0"
     object-hash: "npm:^3.0.0"
     sharp: "npm:^0.33.5"
@@ -2288,7 +2298,7 @@ __metadata:
   dependencies:
     "@mantine/core": "npm:^7.10.0"
     "@mantine/hooks": "npm:^7.10.0"
-    "@quatrain/types": "workspace:*"
+    "@quatrain/types": "npm:^1.2.18"
     "@quatrain/ux-taxonomy": "workspace:*"
     "@tabler/icons-react": "npm:^3.5.0"
   peerDependencies:
@@ -2304,7 +2314,7 @@ __metadata:
     "@mantine/core": "npm:^7.10.0"
     "@mantine/dropzone": "npm:^7.10.0"
     "@mantine/hooks": "npm:^7.10.0"
-    "@quatrain/types": "workspace:*"
+    "@quatrain/types": "npm:^1.2.18"
     "@tabler/icons-react": "npm:^3.5.0"
   peerDependencies:
     react: ^18.3.1
@@ -2318,7 +2328,7 @@ __metadata:
   dependencies:
     "@mantine/core": "npm:^7.10.0"
     "@mantine/hooks": "npm:^7.10.0"
-    "@quatrain/types": "workspace:*"
+    "@quatrain/types": "npm:^1.2.18"
     "@tabler/icons-react": "npm:^3.5.0"
   peerDependencies:
     react: ^18.3.1

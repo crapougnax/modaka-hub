@@ -15,6 +15,7 @@ const localAliases = {
   '@quatrain/storage-local': path.join(coreDir, 'storage-local/src/index.ts'),
   '@quatrain/storage-s3': path.join(coreDir, 'storage-s3/src/index.ts'),
   '@quatrain/okf': path.join(coreDir, 'okf/src/index.ts'),
+  '@quatrain/okf-ingest': path.join(coreDir, 'okf-ingest/src/index.ts'),
   '@quatrain/api-server-astro': path.join(coreDir, 'api-server-astro/src/index.ts'),
   '@quatrain/api-server': path.join(coreDir, 'api-server/src/index.ts'),
   '@quatrain/api': path.join(coreDir, 'api/src/index.ts'),
