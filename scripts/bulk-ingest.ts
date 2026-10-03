@@ -46,6 +46,7 @@ interface CliOptions {
    skipAi: boolean;
    dryRun: boolean;
    resume: boolean;
+   limit?: number;
 }
 
 interface ScanResult {
@@ -86,6 +87,7 @@ function printUsage(exitCode = 1): void {
    print('  --dry-run              List files without ingesting');
    print('  --resume               Skip already-ingested files (default: true)');
    print('  --no-resume, --force   Force re-ingestion of all files');
+   print('  --limit <n>            Maximum documents to ingest');
    print('  --help, -h             Show this help message');
    process.exit(exitCode);
 }
@@ -124,6 +126,9 @@ function parseArgs(argv: string[]): CliOptions {
             break;
          case '--batch-commit':
             opts.batchCommit = parseInt(args[++i], 10) || 50;
+            break;
+         case '--limit':
+            opts.limit = parseInt(args[++i], 10);
             break;
          case '--extensions':
             opts.extensions = args[++i].split(',').map((e) => e.trim().toLowerCase());
@@ -694,9 +699,15 @@ async function main(): Promise<void> {
    const concurrency = Math.max(1, opts.concurrency);
    const workers = Array.from({ length: Math.min(concurrency, files.length) }, async () => {
       while (cursor < files.length && !isTerminating) {
+         if (opts.limit && ingested >= opts.limit) {
+            break;
+         }
          const index = cursor++;
          const file = files[index];
          await processFile(file);
+         if (opts.limit && ingested >= opts.limit) {
+            break;
+         }
          if (opts.delayMs > 0 && !isTerminating) {
             await sleep(opts.delayMs);
          }
