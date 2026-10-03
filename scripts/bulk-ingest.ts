@@ -29,6 +29,7 @@ import {
    writeOkfDocument,
    OkfDedupCache,
    OkfFrontmatterV2,
+   ingestMonograph,
 } from '@quatrain/okf-ingest';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -49,6 +50,8 @@ interface CliOptions {
    limit?: number;
    minSizeBytes?: number;
    sortBy?: 'size' | 'name';
+   splitThresholdChars?: number;
+   noSplit?: boolean;
 }
 
 interface ScanResult {
@@ -103,6 +106,8 @@ function printUsage(exitCode = 1): void {
    print('  --limit <n>            Maximum documents to ingest');
    print('  --min-size <size>      Minimum file size filter (e.g. 5MB, 10M)');
    print('  --sort-by <size|name>  Sort scanned files before processing (descending for size)');
+   print('  --split-threshold <n>  Split monographs (>N chars) into chapters (default: 80000)');
+   print('  --no-split             Disable monograph chapter splitting');
    print('  --help, -h             Show this help message');
    process.exit(exitCode);
 }
@@ -156,6 +161,12 @@ function parseArgs(argv: string[]): CliOptions {
             }
             break;
          }
+         case '--split-threshold':
+            opts.splitThresholdChars = parseInt(args[++i], 10) || 80_000;
+            break;
+         case '--no-split':
+            opts.noSplit = true;
+            break;
          case '--extensions':
             opts.extensions = args[++i].split(',').map((e) => e.trim().toLowerCase());
             break;
@@ -423,11 +434,11 @@ function sleep(ms: number): Promise<void> {
 async function main(): Promise<void> {
    const opts = parseArgs(process.argv);
 
-   // Validate source directory
+   // Validate source directory or file
    try {
       const stat = await fs.stat(opts.sourceDir);
-      if (!stat.isDirectory()) {
-         console.error(`Error: ${opts.sourceDir} is not a directory`);
+      if (!stat.isDirectory() && !stat.isFile()) {
+         console.error(`Error: ${opts.sourceDir} is neither a file nor a directory`);
          process.exit(1);
       }
    } catch {
@@ -622,46 +633,12 @@ async function main(): Promise<void> {
             .replace(/_/g, ' ')
             .trim();
 
-         // AI extraction via @quatrain/okf-ingest
-         let aiResult: any = null;
-         if (useAi && geminiApiKey) {
-            try {
-               aiResult = await extractSemanticContent(
-                  {
-                     buffer,
-                     rawText,
-                     filename: path.basename(file.absolutePath),
-                     isPdf,
-                     isScanned,
-                  },
-                  geminiApiKey,
-                  {
-                     model,
-                     soa: opts.soa,
-                     defaultCategory: opts.category || resolveCategory(file.absolutePath, opts.sourceDir),
-                  }
-               );
-
-               if (aiResult.usage) {
-                  runningTokens += aiResult.usage.total;
-                  runningCostUsd += aiResult.usage.costUsd;
-               }
-               totalDiagrams += aiResult.diagramsTranscribed || 0;
-               totalTables += aiResult.tablesTranscribed || 0;
-            } catch (aiErr: any) {
-               Log.warn(`[Bulk Ingest] AI extraction warning on ${file.relativePath}: ${aiErr.message}`);
-            }
-         }
-
-         const title = aiResult?.metadata?.title || cleanTitle;
-         const slug = slugify(title) || hash.substring(0, 12);
-         const category = opts.category || aiResult?.metadata?.category || resolveCategory(file.absolutePath, opts.sourceDir);
-         const description = aiResult?.metadata?.description || (rawText
-            ? rawText.substring(0, 300).replace(/\s+/g, ' ').trim() + '...'
-            : 'Document agronomique ingéré.');
+         const splitThreshold = opts.splitThresholdChars || 80_000;
+         const isMonograph = !opts.noSplit && rawText.length > splitThreshold && useAi && Boolean(geminiApiKey);
 
          // S3 Upload via @quatrain/storage-s3
-         const s3Key = buildS3Key(category, hash, path.basename(file.absolutePath));
+         const preliminaryCategory = opts.category || resolveCategory(file.absolutePath, opts.sourceDir);
+         const s3Key = buildS3Key(preliminaryCategory, hash, path.basename(file.absolutePath));
          let originalFileUri: string;
 
          if (useS3) {
@@ -683,6 +660,86 @@ async function main(): Promise<void> {
             await fs.writeFile(path.join(assetsDir, path.basename(file.absolutePath)), buffer);
             originalFileUri = `assets/documents/${path.basename(file.absolutePath)}`;
          }
+
+         if (isMonograph && geminiApiKey) {
+            Log.info(
+               `[Bulk Ingest] 📖 Large monograph detected (${(rawText.length / 1000).toFixed(0)}k chars): decomposing into chapters...`
+            );
+            const monographResult = await ingestMonograph(
+               {
+                  rawText,
+                  filename: path.basename(file.absolutePath),
+                  fileHash: hash,
+                  originalFileUri,
+                  gitLocalPath,
+               },
+               geminiApiKey,
+               {
+                  model,
+                  soa: opts.soa,
+                  revision,
+                  defaultCategory: preliminaryCategory,
+               }
+            );
+
+            runningTokens += monographResult.totalTokens.total;
+            runningCostUsd += monographResult.totalTokens.costUsd;
+            totalDiagrams += monographResult.totalDiagrams;
+            totalTables += monographResult.totalTables;
+
+            batchFiles.push(...monographResult.allCreatedFiles);
+            batchCount += monographResult.allCreatedFiles.length;
+
+            dedup.register(hash, {
+               filename: path.basename(file.absolutePath),
+               ingestedAt: new Date().toISOString(),
+               category: monographResult.masterDoc.metadata.category || preliminaryCategory,
+               s3Key: originalFileUri,
+               tokens: monographResult.totalTokens,
+            });
+
+            ingested++;
+            await scheduleBatchCommit();
+            return;
+         }
+
+         // AI extraction via @quatrain/okf-ingest for standard documents
+         let aiResult: any = null;
+         if (useAi && geminiApiKey) {
+            try {
+               aiResult = await extractSemanticContent(
+                  {
+                     buffer,
+                     rawText,
+                     filename: path.basename(file.absolutePath),
+                     isPdf,
+                     isScanned,
+                  },
+                  geminiApiKey,
+                  {
+                     model,
+                     soa: opts.soa,
+                     defaultCategory: preliminaryCategory,
+                  }
+               );
+
+               if (aiResult.usage) {
+                  runningTokens += aiResult.usage.total;
+                  runningCostUsd += aiResult.usage.costUsd;
+               }
+               totalDiagrams += aiResult.diagramsTranscribed || 0;
+               totalTables += aiResult.tablesTranscribed || 0;
+            } catch (aiErr: any) {
+               Log.warn(`[Bulk Ingest] AI extraction warning on ${file.relativePath}: ${aiErr.message}`);
+            }
+         }
+
+         const title = aiResult?.metadata?.title || cleanTitle;
+         const slug = slugify(title) || hash.substring(0, 12);
+         const category = opts.category || aiResult?.metadata?.category || preliminaryCategory;
+         const description = aiResult?.metadata?.description || (rawText
+            ? rawText.substring(0, 300).replace(/\s+/g, ' ').trim() + '...'
+            : 'Document agronomique ingéré.');
 
          // Prepare OKF v0.2 metadata
          const metadata: OkfFrontmatterV2 = {
