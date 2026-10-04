@@ -38,6 +38,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 interface CliOptions {
    sourceDir: string;
+   fileList?: string;
    category?: string;
    soa: string;
    concurrency: number;
@@ -106,6 +107,8 @@ function printUsage(exitCode = 1): void {
    print('  --limit <n>            Maximum documents to ingest');
    print('  --min-size <size>      Minimum file size filter (e.g. 5MB, 10M)');
    print('  --sort-by <size|name>  Sort scanned files before processing (descending for size)');
+   print('  --file-list <path>     Read file paths from a batch text file');
+   print('  --batch <path>         Alias for --file-list');
    print('  --split-threshold <n>  Split monographs (>N chars) into chapters (default: 80000)');
    print('  --no-split             Disable monograph chapter splitting');
    print('  --help, -h             Show this help message');
@@ -183,6 +186,10 @@ function parseArgs(argv: string[]): CliOptions {
          case '--force':
             opts.resume = false;
             break;
+         case '--file-list':
+         case '--batch':
+            opts.fileList = resolvePath(args[++i]);
+            break;
          default:
             if (!args[i].startsWith('--')) {
                opts.sourceDir = resolvePath(args[i]);
@@ -191,8 +198,12 @@ function parseArgs(argv: string[]): CliOptions {
       }
    }
 
-   if (!opts.sourceDir) {
+   if (!opts.sourceDir && !opts.fileList) {
       printUsage(1);
+   }
+
+   if (!opts.sourceDir && opts.fileList) {
+      opts.sourceDir = path.dirname(opts.fileList);
    }
 
    return opts;
@@ -227,6 +238,7 @@ const DIRECTORY_RULES: Array<{ pattern: string; category: string }> = [
    { pattern: 'compaction _ erosion', category: 'soil-health' },
    { pattern: 'guide culture', category: 'crops' },
    { pattern: 'phytos', category: 'plant-protection' },
+   { pattern: 'adventices', category: 'plant-protection' },
    { pattern: 'fertilisation', category: 'soil-amendments' },
    { pattern: 'biostim', category: 'soil-amendments' },
    { pattern: 'elevage', category: 'livestock' },
@@ -404,6 +416,32 @@ async function scanDirectory(dir: string, extensions: Set<string>): Promise<Scan
    return results;
 }
 
+async function scanFileList(fileListPath: string, extensions: Set<string>): Promise<ScanResult[]> {
+   const content = await fs.readFile(fileListPath, 'utf-8');
+   const lines = content.split('\n').map((l) => l.trim()).filter((l) => l.length > 0 && !l.startsWith('#'));
+   const results: ScanResult[] = [];
+   for (const line of lines) {
+      const resolved = resolvePath(line);
+      try {
+         const stat = await fs.stat(resolved);
+         if (stat.isFile()) {
+            const ext = path.extname(resolved).toLowerCase().replace('.', '');
+            if (extensions.has(ext)) {
+               results.push({
+                  absolutePath: resolved,
+                  relativePath: path.basename(resolved),
+                  extension: ext,
+                  sizeBytes: stat.size,
+               });
+            }
+         }
+      } catch (err: any) {
+         Log.warn(`[Bulk Ingest] File from batch list not found: ${resolved}`);
+      }
+   }
+   return results;
+}
+
 // ─── Progress Display ───────────────────────────────────────────────────────────
 
 function printProgress(
@@ -463,8 +501,14 @@ async function main(): Promise<void> {
    console.log('');
 
    // Phase 1: Scan
-   console.log('  ⏳ Scanning files...');
-   let files = await scanDirectory(opts.sourceDir, extensions);
+   let files: ScanResult[];
+   if (opts.fileList) {
+      console.log(`  ⏳ Reading file list from ${opts.fileList}...`);
+      files = await scanFileList(opts.fileList, extensions);
+   } else {
+      console.log('  ⏳ Scanning files...');
+      files = await scanDirectory(opts.sourceDir, extensions);
+   }
    if (opts.minSizeBytes) {
       files = files.filter((f) => f.sizeBytes >= opts.minSizeBytes!);
    }
@@ -776,6 +820,9 @@ async function main(): Promise<void> {
             fileHash: hash,
             source: `bulk-ingest:${file.relativePath}`,
             language: aiResult?.metadata?.language || 'fr',
+            originalLanguage: aiResult?.metadata?.originalLanguage || aiResult?.metadata?.language || 'fr',
+            abstracts: aiResult?.metadata?.abstracts,
+            keywords: aiResult?.metadata?.keywords,
             timestamp: new Date().toISOString(),
          };
 
