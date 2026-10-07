@@ -9,6 +9,8 @@
  *   bun scripts/ingest-catalog.ts [options] <pdf-path>
  */
 
+import { AbstractAiAdapter } from '@quatrain/ai';
+import { GeminiAdapter } from '@quatrain/ai-gemini';
 import { BradAgronomyProfile } from '@quatrain/okf-ingest';
 import {
    CatalogEntryChunk,
@@ -17,6 +19,7 @@ import {
    ingestCatalogMonograph,
    slugify,
 } from '@quatrain/okf-ingest-catalog';
+import { OpenAiAdapter } from '@quatrain/ai-openai';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -31,6 +34,9 @@ interface CliOptions {
    entriesOnly?: boolean;
    dryRun?: boolean;
    languages?: string[];
+   adapter?: 'gemini' | 'lmstudio';
+   model?: string;
+   lmStudioUrl?: string;
 }
 
 function parseCliArgs(): CliOptions {
@@ -40,6 +46,7 @@ function parseCliArgs(): CliOptions {
       category: 'bio-indication',
       offset: 0,
       dryRun: false,
+      lmStudioUrl: process.env.LM_STUDIO_URL || 'http://localhost:1234/v1',
    };
 
    for (let i = 0; i < args.length; i++) {
@@ -55,6 +62,15 @@ function parseCliArgs(): CliOptions {
             break;
          case '--languages':
             opts.languages = args[++i].split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+            break;
+         case '--adapter':
+            opts.adapter = args[++i].toLowerCase() as 'gemini' | 'lmstudio';
+            break;
+         case '--model':
+            opts.model = args[++i];
+            break;
+         case '--lm-studio-url':
+            opts.lmStudioUrl = args[++i];
             break;
          case '--intro-only':
             opts.introOnly = true;
@@ -88,10 +104,28 @@ async function computeSha256(filePath: string): Promise<string> {
 
 async function main(): Promise<void> {
    const opts = parseCliArgs();
-   const apiKey = process.env.GEMINI_API_KEY;
-   if (!apiKey) {
-      console.error('Error: GEMINI_API_KEY environment variable is required');
-      process.exit(1);
+   const selectedAdapterType = opts.adapter || (process.env.GEMINI_API_KEY ? 'gemini' : 'lmstudio');
+   let aiAdapter: AbstractAiAdapter;
+   let modelName: string;
+
+   if (selectedAdapterType === 'lmstudio') {
+      modelName = opts.model || 'gemma-4-e4b-it';
+      console.log(`\n🤖 AI Adapter: Local LM Studio`);
+      console.log(`  Endpoint:    ${opts.lmStudioUrl}`);
+      console.log(`  Model:       ${modelName}`);
+      aiAdapter = OpenAiAdapter.forLmStudio(opts.lmStudioUrl, modelName);
+      aiAdapter.init();
+   } else {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+         console.error('Error: GEMINI_API_KEY environment variable is required when using Gemini adapter');
+         process.exit(1);
+      }
+      modelName = opts.model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      console.log(`\n🤖 AI Adapter: Google Gemini`);
+      console.log(`  Model:       ${modelName}`);
+      aiAdapter = new GeminiAdapter(apiKey);
+      aiAdapter.init();
    }
 
    const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
@@ -245,7 +279,8 @@ async function main(): Promise<void> {
    };
 
    const summary = await ingestCatalogMonograph(bookInput, {
-      apiKey,
+      adapter: aiAdapter,
+      model: modelName,
       gitLocalPath,
       originalFileUri: `originals/agronomie-livres/${path.basename(opts.pdfPath)}`,
       fileHash,

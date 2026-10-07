@@ -56,6 +56,7 @@ export interface IngestTask {
    language?: string;
    isbn?: string;
    doi?: string;
+   license?: string;
    copyright?: string;
    originalTitle?: string;
    originalLanguage?: string;
@@ -185,7 +186,7 @@ class ModakaHubQueueManager {
                aiResult = await ocrAdapter.process(rawText || buffer!, {
                   isText: Boolean(rawText),
                   mimeType: isPdf ? 'application/pdf' : 'text/plain',
-                  contextNote: task.contextNote || 'Ingestion Bradtech pour base agronomique OKF. Extrais les 5 axes: sols (soils), climats (climates), latitudes/altitudes, itinéraires techniques (itineraries), productions végétales (crops). Extrais aussi rigoureusement les métadonnées bibliographiques: auteurs (authors: string[]), traducteurs (translators: string[]), éditeur (publisher: string), édition/version (edition: string), année de publication (publicationYear: string), langue (language: string), ISBN (isbn: string), DOI (doi: string), copyright de cette édition (copyright: string), titre original (originalTitle: string), langue originale (originalLanguage: string), éditeur d\'origine (originalPublisher: string), année originale (originalYear: string), copyright original (originalCopyright: string), et la citation normalisée (citation: string).',
+                  contextNote: task.contextNote || 'Ingestion Bradtech pour base agronomique OKF. Extrais les 5 axes: sols (soils), climats (climates), latitudes/altitudes, itinéraires techniques (itineraries), productions végétales (crops). Extrais aussi rigoureusement les métadonnées bibliographiques: auteurs (authors: string[]), traducteurs (translators: string[]), éditeur (publisher: string), édition/version (edition: string), année de publication (publicationYear: string), langue (language: string), ISBN (isbn: string), DOI (doi: string), licence normalisée ou statut science ouverte (license: string, ex: "CC-BY-4.0", "CC-BY-SA-4.0", "CC0-1.0", "Open Access", "Propriétaire", ou non spécifié), copyright de cette édition (copyright: string), titre original (originalTitle: string), langue originale (originalLanguage: string), éditeur d\'origine (originalPublisher: string), année originale (originalYear: string), copyright original (originalCopyright: string), et la citation normalisée (citation: string).',
                   model
                });
             }
@@ -281,6 +282,7 @@ class ModakaHubQueueManager {
          language: task.language || aiResult?.language || 'fr',
          isbn: task.isbn || aiResult?.isbn || undefined,
          doi: task.doi || aiResult?.doi || undefined,
+         license: task.license || aiResult?.license || undefined,
          copyright: task.copyright || aiResult?.copyright || undefined,
          originalTitle: task.originalTitle || aiResult?.originalTitle || undefined,
          originalLanguage: task.originalLanguage || aiResult?.originalLanguage || undefined,

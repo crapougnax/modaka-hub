@@ -1,0 +1,38 @@
+{
+  "appTitle": "Modaka Hub",
+  "appSubtitle": "Multi-Source Knowledge Curation & OKF Structuring Platform",
+  "badgeLabel": "Curation Workbench",
+  "soa": "modaka/authority",
+  "gitLocalPath": "./data/okf",
+  "gitRepoOwner": "Quatrain",
+  "gitRepoName": "knowledge",
+  "gitBranch": "develop",
+  "gitMode": "local",
+  "storageType": "local",
+  "documentStoragePath": "./data/okf/assets",
+  "aiProvider": "gemini",
+  "allowedEmailDomains": ["*"],
+  "axes": [
+    {
+      "id": "concepts",
+      "label": "Concepts & Notions Clés",
+      "folder": "concepts",
+      "color": "blue",
+      "description": "Concepts théoriques fondamentaux et définitions formelles."
+    },
+    {
+      "id": "guides",
+      "label": "Guides & Itinéraires",
+      "folder": "guides",
+      "color": "green",
+      "description": "Guides pratiques opérationnels et procédures d'application."
+    },
+    {
+      "id": "references",
+      "label": "Références & Standards",
+      "folder": "references",
+      "color": "amber",
+      "description": "Normes, standards industriels, citations et bibliographie de référence."
+    }
+  ]
+}

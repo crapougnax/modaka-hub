@@ -138,6 +138,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       language: body.language || 'fr',
       isbn: body.isbn,
       doi: body.doi,
+      license: body.license,
       copyright: body.copyright,
       originalTitle: body.originalTitle,
       originalLanguage: body.originalLanguage,

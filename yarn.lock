@@ -1987,6 +1987,15 @@ __metadata:
   languageName: node
   linkType: soft
 
+"@quatrain/ai-openai@portal:../../QUATRAIN/Core/packages/ai-openai::locator=%40quatrain%2Fmodaka-hub%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@quatrain/ai-openai@portal:../../QUATRAIN/Core/packages/ai-openai::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
+  dependencies:
+    "@quatrain/ai": "workspace:*"
+    "@quatrain/core": "workspace:*"
+  languageName: node
+  linkType: soft
+
 "@quatrain/ai@portal:../../QUATRAIN/Core/packages/ai::locator=%40quatrain%2Fmodaka-hub%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@quatrain/ai@portal:../../QUATRAIN/Core/packages/ai::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
@@ -2144,6 +2153,7 @@ __metadata:
     "@mantine/hooks": "npm:^7.10.0"
     "@quatrain/ai": "npm:^1.1.4"
     "@quatrain/ai-gemini": "npm:^1.1.4"
+    "@quatrain/ai-openai": "portal:../../QUATRAIN/Core/packages/ai-openai"
     "@quatrain/api-client": "npm:^1.1.7"
     "@quatrain/api-server": "npm:^1.1.11"
     "@quatrain/api-server-astro": "npm:^1.1.15"
@@ -2158,6 +2168,7 @@ __metadata:
     "@quatrain/log": "npm:^1.2.4"
     "@quatrain/okf": "npm:^1.0.4"
     "@quatrain/okf-ingest": "portal:../../QUATRAIN/Core/packages/okf-ingest"
+    "@quatrain/okf-ingest-catalog": "portal:../../QUATRAIN/Core/packages/okf-ingest-catalog"
     "@quatrain/queue": "npm:^1.2.3"
     "@quatrain/queue-sqlite": "npm:^1.0.1"
     "@quatrain/searchengine": "npm:^1.0.0"
@@ -2192,13 +2203,27 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@quatrain/okf-ingest-catalog@portal:../../QUATRAIN/Core/packages/okf-ingest-catalog::locator=%40quatrain%2Fmodaka-hub%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@quatrain/okf-ingest-catalog@portal:../../QUATRAIN/Core/packages/okf-ingest-catalog::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
+  dependencies:
+    "@quatrain/ai": "workspace:*"
+    "@quatrain/core": "workspace:*"
+    "@quatrain/log": "workspace:*"
+    "@quatrain/okf-ingest": "workspace:*"
+    "@quatrain/types": "workspace:*"
+    pdf-parse: "npm:^1.1.1"
+    yaml: "npm:^2.4.0"
+  languageName: node
+  linkType: soft
+
 "@quatrain/okf-ingest@portal:../../QUATRAIN/Core/packages/okf-ingest::locator=%40quatrain%2Fmodaka-hub%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@quatrain/okf-ingest@portal:../../QUATRAIN/Core/packages/okf-ingest::locator=%40quatrain%2Fmodaka-hub%40workspace%3A."
   dependencies:
-    "@google/genai": "npm:latest"
     "@quatrain/ai": "workspace:*"
     "@quatrain/ai-gemini": "workspace:*"
+    "@quatrain/ai-openai": "workspace:*"
     "@quatrain/core": "workspace:*"
     "@quatrain/log": "workspace:*"
     pdf-parse: "npm:^1.1.1"

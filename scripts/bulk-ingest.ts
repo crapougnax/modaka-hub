@@ -816,6 +816,8 @@ async function main(): Promise<void> {
             authors: aiResult?.metadata?.authors,
             publisher: aiResult?.metadata?.publisher,
             publicationYear: aiResult?.metadata?.publicationYear,
+            license: aiResult?.metadata?.license,
+            copyright: aiResult?.metadata?.copyright,
             originalFileUri,
             fileHash: hash,
             source: `bulk-ingest:${file.relativePath}`,

@@ -28,6 +28,7 @@
     "@mantine/hooks": "^7.10.0",
     "@quatrain/ai": "^1.1.4",
     "@quatrain/ai-gemini": "^1.1.4",
+    "@quatrain/ai-openai": "portal:../../QUATRAIN/Core/packages/ai-openai",
     "@quatrain/api-client": "^1.1.7",
     "@quatrain/api-server": "^1.1.11",
     "@quatrain/api-server-astro": "^1.1.15",
@@ -42,6 +43,7 @@
     "@quatrain/log": "^1.2.4",
     "@quatrain/okf": "^1.0.4",
     "@quatrain/okf-ingest": "portal:../../QUATRAIN/Core/packages/okf-ingest",
+    "@quatrain/okf-ingest-catalog": "portal:../../QUATRAIN/Core/packages/okf-ingest-catalog",
     "@quatrain/queue": "^1.2.3",
     "@quatrain/queue-sqlite": "^1.0.1",
     "@quatrain/searchengine": "^1.0.0",
@@ -78,6 +80,7 @@
   },
   "resolutions": {
     "@quatrain/ai-gemini": "portal:../../QUATRAIN/Core/packages/ai-gemini",
+    "@quatrain/ai-openai": "portal:../../QUATRAIN/Core/packages/ai-openai",
     "@quatrain/ai": "portal:../../QUATRAIN/Core/packages/ai",
     "@quatrain/api-client": "portal:../../QUATRAIN/Core/packages/api-client",
     "@quatrain/api-server-astro": "portal:../../QUATRAIN/Core/packages/api-server-astro",

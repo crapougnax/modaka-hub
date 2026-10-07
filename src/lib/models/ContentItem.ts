@@ -193,6 +193,11 @@ export const ContentItemProperties = [
       mandatory: false
    },
    {
+      name: 'license',
+      type: StringProperty.TYPE,
+      mandatory: false
+   },
+   {
       name: 'copyright',
       type: StringProperty.TYPE,
       mandatory: false
