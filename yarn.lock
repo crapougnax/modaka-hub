@@ -2184,13 +2184,11 @@ __metadata:
     "@tabler/icons-react": "npm:^3.5.0"
     "@tsconfig/recommended": "npm:^1.0.13"
     "@types/fs-extra": "npm:^11.0.4"
-    "@types/pdf-parse": "npm:^1.1.4"
     "@types/react": "npm:^18.3.3"
     "@types/react-dom": "npm:^18.3.0"
     astro: "npm:^5.0.0"
     dotenv: "npm:^16.4.5"
     fs-extra: "npm:^11.2.0"
-    pdf-parse: "npm:^1.1.1"
     postcss: "npm:^8.4.38"
     postcss-preset-mantine: "npm:^1.15.0"
     postcss-simple-vars: "npm:^7.0.1"
@@ -2850,15 +2848,6 @@ __metadata:
   dependencies:
     undici-types: "npm:~8.3.0"
   checksum: 10c0/f8566d88162241eb55a46f7e4ea097188eab0aaafefea7a58e63adab8c4144eb98c08b7911452c846104c339a0f82282f5e1ed4b26b578d60709614fe2843f4d
-  languageName: node
-  linkType: hard
-
-"@types/pdf-parse@npm:^1.1.4":
-  version: 1.1.5
-  resolution: "@types/pdf-parse@npm:1.1.5"
-  dependencies:
-    "@types/node": "npm:*"
-  checksum: 10c0/68989815ca9b6321eb5ab47437edf58d4f8291d4857b4bad0d7dedf1f4535da9918bc1113f7f59763c238f35175b080d3dfa76c5f26eeeb091ac4b6604028d2e
   languageName: node
   linkType: hard
 

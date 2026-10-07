@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import pdfParse from 'pdf-parse';
+import { extractPdfText } from '@quatrain/okf-ingest';
 import { Queue } from '@quatrain/queue';
 import { Log } from '@quatrain/log';
 import { Ingestion } from '@quatrain/ingestion';
@@ -161,11 +161,12 @@ class ModakaHubQueueManager {
 
       if (isPdf && buffer) {
          try {
-            Log.info(`[Modaka-Hub Queue] Parsing PDF contents with pdf-parse (${buffer.length} bytes)...`);
-            const parsedPdf = await pdfParse(buffer);
-            rawText = parsedPdf.text || '';
-         } catch (e: any) {
-            Log.warn(`[Modaka-Hub Queue] pdf-parse fallback error: ${e.message}`);
+            Log.info(`[Modaka-Hub Queue] Extracting PDF text layer (${buffer.length} bytes)...`);
+            const parsed = await extractPdfText(buffer);
+            rawText = parsed.text || '';
+         } catch (e: unknown) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            Log.warn(`[Modaka-Hub Queue] PDF text extraction error: ${err.message}`);
             rawText = '';
          }
       } else if (task.textContent) {

@@ -11,7 +11,7 @@
 
 import { AbstractAiAdapter } from '@quatrain/ai';
 import { GeminiAdapter } from '@quatrain/ai-gemini';
-import { BradAgronomyProfile } from '@quatrain/okf-ingest';
+import { BradAgronomyProfile, extractPdfPages } from '@quatrain/okf-ingest';
 import {
    CatalogEntryChunk,
    CatalogIngestionOptions,
@@ -23,7 +23,6 @@ import { OpenAiAdapter } from '@quatrain/ai-openai';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import pdfParse from 'pdf-parse';
 
 interface CliOptions {
    pdfPath: string;
@@ -141,20 +140,7 @@ async function main(): Promise<void> {
    const pdfBuffer = await fs.readFile(opts.pdfPath);
 
    console.log(`\n⏳ Extracting pages from PDF...`);
-   const pagesText: string[] = [];
-
-   await pdfParse(pdfBuffer, {
-      pagerender: (pageData) => {
-         return pageData.getTextContent().then((textContent) => {
-            let pageText = '';
-            for (const item of textContent.items) {
-               pageText += (item as { str: string }).str + ' ';
-            }
-            pagesText.push(pageText);
-            return pageText;
-         });
-      },
-   });
+   const pagesText = await extractPdfPages(pdfBuffer);
 
    console.log(`✓ Parsed ${pagesText.length} pages.`);
 
