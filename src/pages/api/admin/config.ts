@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { getGitLocalPath, loadHubConfig } from '../../../lib/config';
 
 function maskKey(val?: string): string {
   if (!val) return '';
@@ -10,7 +11,7 @@ function maskKey(val?: string): string {
 
 export const GET: APIRoute = async ({ locals }) => {
   const userRoles = locals.user?.roles || [];
-  const isAdmin = userRoles.includes('admin-brad') || userRoles.includes('admin');
+  const isAdmin = userRoles.includes('admin') || userRoles.includes('admin-brad');
 
   if (!isAdmin) {
     return new Response(
@@ -19,34 +20,38 @@ export const GET: APIRoute = async ({ locals }) => {
     );
   }
 
+  const hubConfig = loadHubConfig();
+  const gitLocalPath = getGitLocalPath();
+
   const config = {
     llm: {
-      provider: process.env.LLM_PROVIDER || 'gemini',
+      provider: process.env.LLM_PROVIDER || hubConfig.aiProvider || 'gemini',
       model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       apiKey: maskKey(process.env.GEMINI_API_KEY),
       hasApiKey: Boolean(process.env.GEMINI_API_KEY)
     },
     storage: {
-      type: process.env.STORAGE_TYPE || 'local',
+      type: process.env.STORAGE_TYPE || hubConfig.storageType || 'local',
       documentStoragePath:
         process.env.DOCUMENT_STORAGE_PATH ||
-        path.join(process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy', 'assets'),
-      s3Bucket: process.env.S3_BUCKET || 'world-agronomy',
+        hubConfig.documentStoragePath ||
+        path.join(gitLocalPath, 'assets'),
+      s3Bucket: process.env.S3_BUCKET || 'documents',
       s3Region: process.env.S3_REGION || 'us-east-1',
       s3Endpoint: process.env.S3_ENDPOINT || '',
       s3AccessKey: maskKey(process.env.S3_ACCESS_KEY),
       hasSecretKey: Boolean(process.env.S3_SECRET_KEY)
     },
     git: {
-      localPath: process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy',
-      repoOwner: process.env.GIT_REPO_OWNER || 'bradtech',
-      repoName: process.env.GIT_REPO_NAME || 'world-agronomy',
-      branch: process.env.GIT_BRANCH || 'feat/bookworm-poc',
-      mode: process.env.GIT_MODE || 'local'
+      localPath: gitLocalPath,
+      repoOwner: process.env.GIT_REPO_OWNER || hubConfig.gitRepoOwner || 'Quatrain',
+      repoName: process.env.GIT_REPO_NAME || hubConfig.gitRepoName || 'knowledge',
+      branch: process.env.GIT_BRANCH || hubConfig.gitBranch || 'develop',
+      mode: process.env.GIT_MODE || hubConfig.gitMode || 'local'
     },
     auth: {
       supabaseUrl: process.env.PUBLIC_SUPABASE_URL || 'https://qthlhrtxnuzibnzimoao.supabase.co',
-      allowedDomain: '@brad.ag'
+      allowedDomain: process.env.ALLOWED_EMAIL_DOMAINS || (hubConfig.allowedEmailDomains || ['*']).join(', ')
     }
   };
 
@@ -58,7 +63,7 @@ export const GET: APIRoute = async ({ locals }) => {
 
 export const POST: APIRoute = async ({ request, locals }) => {
   const userRoles = locals.user?.roles || [];
-  const isAdmin = userRoles.includes('admin-brad') || userRoles.includes('admin');
+  const isAdmin = userRoles.includes('admin') || userRoles.includes('admin-brad');
 
   if (!isAdmin) {
     return new Response(

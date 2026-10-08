@@ -29,7 +29,7 @@ export const modaka-hubComposition: AppCompositionInterface<PWAContentInterface>
       queue: { package: '@quatrain/queue-sqlite', adapter: 'SQLiteQueueAdapter' }
    },
    config: {
-      okfRoot: process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy',
+      okfRoot: process.env.GIT_LOCAL_PATH || './data/okf',
       defaultCategory: 'inbox'
    }
 };

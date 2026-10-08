@@ -11,7 +11,7 @@ export const ContentItemProperties = [
       name: 'soa',
       type: StringProperty.TYPE,
       mandatory: false,
-      defaultValue: 'bradtech/world-agronomy'
+      defaultValue: process.env.DEFAULT_SOA || 'modaka/authority'
    },
    {
       name: 'revision',

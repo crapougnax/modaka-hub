@@ -84,6 +84,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
   const [saveLoading, setSaveLoading] = useState(false);
   const [extractLoading, setExtractLoading] = useState(false);
   const [telemetryData, setTelemetryData] = useState<any>({ totalInteractions: 0, recordedDocuments: 0, stats: [] });
+  const [currentSoa, setCurrentSoa] = useState<string>('modaka/authority');
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string; roles: string[]; isAdmin?: boolean } | null>(
     initialUser
       ? {
@@ -128,6 +129,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
     try {
       const res = await fetch('/api/taxonomies');
       const data = await res.json();
+      if (data.soa) setCurrentSoa(data.soa);
       if (data.axes) setAxes(data.axes);
       if (data.thematics) {
         setThematics(data.thematics);
@@ -249,7 +251,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
     files.forEach(f => formData.append('files', f));
     formData.append('category', selectedThematicId === 'all' ? 'soil-health' : selectedThematicId);
     formData.append('thematics', JSON.stringify(transversalThematics.length > 0 ? transversalThematics : [selectedThematicId]));
-    formData.append('soa', 'bradtech/world-agronomy');
+    formData.append('soa', currentSoa);
 
     try {
       const res = await fetch('/api/upload', {
@@ -285,7 +287,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
       if (data.success) {
         setNotification({
           title: 'Fiche OKF enregistrée & commitée',
-          message: `Document "${metadata.title}" mis à jour avec SOA: ${metadata.soa || 'bradtech/world-agronomy'}.`,
+          message: `Document "${metadata.title}" mis à jour avec SOA: ${metadata.soa || currentSoa}.`,
           color: 'green'
         });
         setActiveDocument(null);
@@ -346,7 +348,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
               <IconBook2 size={28} color="var(--mantine-color-green-5)" />
               <div>
                 <Text fw={800} size="lg" c="white" style={{ letterSpacing: -0.5 }}>
-                  Modaka-Hub <Badge size="xs" color="green" variant="filled">Bradtech Hub</Badge>
+                  Modaka-Hub <Badge size="xs" color="green" variant="filled">Curation Workbench</Badge>
                 </Text>
                 <Text size="xs" c="dimmed">
                   Curation Multi-Axiale & Structuration OKF v0.1
@@ -360,7 +362,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
                 color="blue"
                 leftSection={<IconWorld size={12} />}
               >
-                SOA: bradtech/world-agronomy
+                SOA: {currentSoa}
               </Badge>
 
               <Button
@@ -370,7 +372,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
                 leftSection={<IconDownload size={14} />}
                 onClick={() => setIsExtractionOpen(true)}
               >
-                Extraire pour Modaka / Hey Brad
+                Extraire pour Client
               </Button>
 
               <Badge
@@ -397,8 +399,8 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
                       <Text size="xs" fw={700} c="white" style={{ lineHeight: 1.2 }}>
                         {currentUser.name}
                       </Text>
-                      {currentUser.roles?.includes('admin-brad') || currentUser.roles?.includes('admin') ? (
-                        <Badge size="xs" color="yellow" variant="light">Admin Brad</Badge>
+                      {currentUser.roles?.includes('admin') || currentUser.roles?.includes('admin-brad') ? (
+                        <Badge size="xs" color="yellow" variant="light">Admin</Badge>
                       ) : (
                         <Badge size="xs" color="teal" variant="light">Curateur</Badge>
                       )}
@@ -410,7 +412,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
                 </Group>
               )}
 
-              {(currentUser?.roles?.includes('admin-brad') || currentUser?.roles?.includes('admin') || currentUser?.isAdmin) && (
+              {(currentUser?.roles?.includes('admin') || currentUser?.roles?.includes('admin-brad') || currentUser?.isAdmin) && (
                 <Tooltip label="Paramètres Système (LLM, S3, Git, Auth)">
                   <ActionIcon
                     variant="light"
@@ -531,7 +533,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
                 Ingestion & Curation ({documents.length})
               </Tabs.Tab>
               <Tabs.Tab value="telemetry" leftSection={<IconActivity size={16} />}>
-                Télémétrie & Retours Hey Brad ({telemetryData.totalInteractions})
+                Télémétrie & Retours ({telemetryData.totalInteractions})
               </Tabs.Tab>
             </Tabs.List>
 
@@ -593,7 +595,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
                                     {doc.category}
                                   </Badge>
                                   <Badge size="xs" variant="outline" color="gray">
-                                    {doc.soa || 'bradtech/world-agronomy'}
+                                    {doc.soa || currentSoa}
                                   </Badge>
                                   <Text size="xs" c="dimmed">
                                     {doc.revision || 'rev-1.0.0'}
@@ -671,7 +673,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
               </SimpleGrid>
             </Tabs.Panel>
 
-            {/* TAB 2: Telemetry & Hey Brad Feedback */}
+            {/* TAB 2: Telemetry & Feedback */}
             <Tabs.Panel value="telemetry">
               <Stack gap="md">
                 <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
@@ -688,7 +690,7 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
                       {telemetryData.totalInteractions}
                     </Text>
                     <Text size="xs" c="dimmed">
-                      Requêtes posées à Hey Brad
+                      Requêtes posées aux Agents IA
                     </Text>
                   </Paper>
 
@@ -719,17 +721,17 @@ export function CurationWorkbench({ initialUser }: CurationWorkbenchProps = {}) 
                       </ThemeIcon>
                     </Group>
                     <Text fw={800} size="md" mt="xs">
-                      bradtech/world-agronomy
+                      {currentSoa}
                     </Text>
                     <Text size="xs" c="dimmed">
-                      Référentiel souverain OKF v0.1
+                      Référentiel souverain OKF v0.2
                     </Text>
                   </Paper>
                 </SimpleGrid>
 
                 <Paper withBorder p="md" radius="md">
                   <Title order={4} mb="md">
-                    Statistiques d'Usage par Fiche Agronomique (Remontées Hey Brad)
+                    Statistiques d'Usage par Fiche (Remontées Clients & Agents)
                   </Title>
 
                   {telemetryData.stats.length === 0 ? (

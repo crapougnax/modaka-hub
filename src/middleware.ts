@@ -12,16 +12,11 @@ const PUBLIC_PATHS = [
   '/favicon.svg'
 ];
 
-const rawAllowedDomains =
-  import.meta.env.ALLOWED_EMAIL_DOMAINS || process.env.ALLOWED_EMAIL_DOMAINS || '@brad.ag';
-const ALLOWED_DOMAINS = rawAllowedDomains
-  .split(',')
-  .map((d: string) => d.trim().toLowerCase())
-  .filter(Boolean);
+import { isEmailDomainAllowed, getAllowedEmailDomains } from './lib/config';
 
 /**
  * Authentication Middleware: Resolves Supabase session, performs silent token refresh,
- * enforces @brad.ag domain restriction, and populates context.locals.user.
+ * enforces domain restrictions (when configured), and populates context.locals.user.
  */
 const authMiddleware = defineMiddleware(async (context, next) => {
   const { pathname } = context.url;
@@ -138,12 +133,8 @@ const authMiddleware = defineMiddleware(async (context, next) => {
 
   const email = (user.email || '').toLowerCase().trim();
 
-  // 6. Strict email domain check against configured ALLOWED_DOMAINS
-  const isDomainAllowed =
-    ALLOWED_DOMAINS.includes('*') ||
-    ALLOWED_DOMAINS.some((allowed) => email.endsWith(allowed));
-
-  if (!isDomainAllowed) {
+  // 6. Email domain check against configured domains
+  if (!isEmailDomainAllowed(email)) {
     context.cookies.delete('sb-access-token', { path: '/' });
     context.cookies.delete('sb-refresh-token', { path: '/' });
 
@@ -151,7 +142,7 @@ const authMiddleware = defineMiddleware(async (context, next) => {
       return new Response(
         JSON.stringify({
           error: 'Forbidden',
-          message: `Accès réservé aux domaines autorisés (${ALLOWED_DOMAINS.join(', ')})`
+          message: `Accès réservé aux domaines autorisés (${getAllowedEmailDomains().join(', ')})`
         }),
         { status: 403, headers: { 'Content-Type': 'application/json' } }
       );
@@ -183,7 +174,7 @@ const authMiddleware = defineMiddleware(async (context, next) => {
 
   // Fallback defaults if no specific role is defined
   const finalRoles =
-    extractedRoles.length > 0 ? Array.from(new Set(extractedRoles)) : ['user-brad', 'curator'];
+    extractedRoles.length > 0 ? Array.from(new Set(extractedRoles)) : ['curator'];
 
   // 8. Inject authenticated user into context.locals
   context.locals.user = {

@@ -26,7 +26,8 @@ export async function initBackend() {
    Log.addLogger('default', new DefaultLoggerAdapter('', LogLevel.INFO), true);
    Log.info('[Modaka-Hub] Initializing backend adapters and OKF storage...');
 
-   const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+   const { getGitLocalPath } = await import('./config');
+   const gitLocalPath = getGitLocalPath();
    const documentStoragePath = process.env.DOCUMENT_STORAGE_PATH || path.join(gitLocalPath, 'assets');
 
    // 1. Initialize Document Storage
@@ -39,10 +40,10 @@ export async function initBackend() {
             endpoint: process.env.S3_ENDPOINT,
             accesskey: process.env.S3_ACCESS_KEY,
             secret: process.env.S3_SECRET_KEY,
-            bucket: process.env.S3_BUCKET || 'world-agronomy'
+            bucket: process.env.S3_BUCKET || 'documents'
          }
       } as any);
-      Log.info(`Document storage configured with S3StorageAdapter on bucket '${process.env.S3_BUCKET || 'world-agronomy'}'`);
+      Log.info(`Document storage configured with S3StorageAdapter on bucket '${process.env.S3_BUCKET || 'documents'}'`);
    } else {
       docAdapter = new LocalStorageAdapter({
          config: { bucket: 'documents' },

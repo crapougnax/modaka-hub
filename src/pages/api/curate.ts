@@ -7,10 +7,11 @@ import { initBackend } from '../../lib/backend';
 import { ContentItem } from '../../lib/models/ContentItem';
 import { gitSync } from '../../lib/git-sync';
 import { slugify } from '../../lib/utils';
+import { getGitLocalPath, getDefaultSoa } from '../../lib/config';
 
 export const GET: APIRoute = async ({ url }) => {
   await initBackend();
-  const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+  const gitLocalPath = getGitLocalPath();
   const contentDir = path.join(gitLocalPath, 'content');
   const targetCategory = url.searchParams.get('category');
   const soilFilter = url.searchParams.get('soil');
@@ -66,8 +67,8 @@ export const GET: APIRoute = async ({ url }) => {
             if (!matches) continue;
 
             items.push({
-              soa: 'bradtech/world-agronomy',
-              revision: 'rev-1.0.0',
+              soa: metadata.soa || getDefaultSoa(),
+              revision: metadata.revision || 'rev-1.0.0',
               ...metadata,
               id: metadata.id || file.replace('.md', ''),
               category: catSlug,
@@ -104,7 +105,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const gitStatus = await gitSync.getStatus();
     const currentRev = gitStatus.lastCommit ? `rev-${gitStatus.lastCommit.split(' ')[0]}` : 'rev-1.0.0';
     // If soa or revision were stripped by FLS for non-admin, fallback to canonical values
-    const soa = (sanitized.soa) || process.env.DEFAULT_SOA || 'bradtech/world-agronomy';
+    const soa = (sanitized.soa) || getDefaultSoa();
     const revision = (sanitized.revision) || currentRev;
 
     const contentItem = await ContentItem.factory({

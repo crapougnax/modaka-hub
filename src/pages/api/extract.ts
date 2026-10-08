@@ -7,6 +7,7 @@ import { initBackend } from '../../lib/backend';
 import { gitSync } from '../../lib/git-sync';
 import { slugify } from '../../lib/utils';
 import { Log } from '@quatrain/log';
+import { getGitLocalPath, getDefaultSoa } from '../../lib/config';
 
 export interface ExtractRequest {
   userId: string;
@@ -23,7 +24,7 @@ export const POST: APIRoute = async ({ request }) => {
   await initBackend();
   const body: ExtractRequest = await request.json();
 
-  const sourceRepoPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+  const sourceRepoPath = getGitLocalPath();
   const targetDestination = body.destinationPath || path.resolve(process.cwd(), `.user-exports/${body.userId}`);
 
   try {
@@ -31,7 +32,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const gitStatus = await gitSync.getStatus();
     const currentRev = gitStatus.lastCommit ? `rev-${gitStatus.lastCommit.split(' ')[0]}` : 'rev-1.0.0';
-    const soa = 'bradtech/world-agronomy';
+    const soa = getDefaultSoa();
 
     // 1. Scan source repository
     const sourceContentDir = path.join(sourceRepoPath, 'content');

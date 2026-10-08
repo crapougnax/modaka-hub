@@ -5,30 +5,35 @@ import { parse as parseYaml } from 'yaml';
 import { initBackend } from '../../lib/backend';
 import { slugify } from '../../lib/utils';
 import { gitSync } from '../../lib/git-sync';
+import { getGitLocalPath, getDefaultSoa, loadHubConfig } from '../../lib/config';
 
 export const GET: APIRoute = async () => {
   await initBackend();
-  const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+  const gitLocalPath = getGitLocalPath();
   const contentDir = path.join(gitLocalPath, 'content');
   const configPath = path.join(gitLocalPath, 'modaka-hub.config.json');
 
   try {
     await fs.mkdir(contentDir, { recursive: true });
 
-    let config: any = {
-      soa: 'bradtech/world-agronomy',
-      name: 'Bradtech World Agronomy',
-      axes: [
-        { id: 'soils', label: 'Sols & Typologies Pédologiques', folder: 'soils', color: 'amber' },
-        { id: 'climates', label: 'Climats & Zones Agro-Climatiques', folder: 'climates', color: 'cyan' },
-        { id: 'crops', label: 'Productions Végétales & Filières', folder: 'crops', color: 'lime' },
-        { id: 'itineraries', label: 'Itinéraires Techniques & Pratiques', folder: 'itineraries', color: 'green' }
-      ]
-    };
+    let config: any = loadHubConfig();
+    if (!config.axes || config.axes.length === 0) {
+      config = {
+        ...config,
+        soa: getDefaultSoa(),
+        name: config.appTitle || 'Modaka Authority',
+        axes: [
+          { id: 'soils', label: 'Sols & Typologies Pédologiques', folder: 'soils', color: 'amber' },
+          { id: 'climates', label: 'Climats & Zones Agro-Climatiques', folder: 'climates', color: 'cyan' },
+          { id: 'crops', label: 'Productions Végétales & Filières', folder: 'crops', color: 'lime' },
+          { id: 'itineraries', label: 'Itinéraires Techniques & Pratiques', folder: 'itineraries', color: 'green' }
+        ]
+      };
+    }
 
     try {
       const configRaw = await fs.readFile(configPath, 'utf-8');
-      config = JSON.parse(configRaw);
+      config = { ...config, ...JSON.parse(configRaw) };
     } catch {}
 
     const axesResult: any[] = [];
@@ -93,7 +98,7 @@ export const GET: APIRoute = async () => {
     }
 
     return new Response(JSON.stringify({
-      soa: config.soa || 'bradtech/world-agronomy',
+      soa: config.soa || getDefaultSoa(),
       config,
       axes: axesResult,
       thematics
@@ -107,7 +112,7 @@ export const GET: APIRoute = async () => {
 
 export const POST: APIRoute = async ({ request }) => {
   await initBackend();
-  const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+  const gitLocalPath = getGitLocalPath();
   const body = await request.json();
   const label = body.label?.trim();
   const description = body.description?.trim() || '';

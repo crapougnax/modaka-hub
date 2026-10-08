@@ -1,6 +1,5 @@
 import type { APIRoute } from 'astro'
-
-const ALLOWED_DOMAIN = '@brad.ag'
+import { isEmailDomainAllowed } from '../../../lib/config'
 
 export const GET: APIRoute = async ({ url, cookies, redirect }) => {
   const code = url.searchParams.get('code')
@@ -92,9 +91,9 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
     const user = await userRes.json()
     const email = (user.email || '').toLowerCase().trim()
 
-    // 3. 🛡️ Strict @brad.ag domain restriction
-    if (!email.endsWith(ALLOWED_DOMAIN)) {
-      console.warn(`[Security] Denied access to non-Brad email: ${email}`)
+    // 3. 🛡️ Domain restriction validation
+    if (!isEmailDomainAllowed(email)) {
+      console.warn(`[Security] Denied access to unauthorized email: ${email}`)
 
       // Revoke token on Supabase
       await fetch(`${supabaseUrl}/auth/v1/logout`, {

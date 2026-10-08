@@ -1,11 +1,5 @@
 import type { APIRoute } from 'astro'
-
-const rawAllowedDomains =
-  import.meta.env.ALLOWED_EMAIL_DOMAINS || process.env.ALLOWED_EMAIL_DOMAINS || '@brad.ag';
-const ALLOWED_DOMAINS = rawAllowedDomains
-  .split(',')
-  .map((d: string) => d.trim().toLowerCase())
-  .filter(Boolean);
+import { isEmailDomainAllowed } from '../../../lib/config'
 
 export const POST: APIRoute = async ({ request, cookies, redirect }) => {
   const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || process.env.PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
@@ -36,12 +30,8 @@ export const POST: APIRoute = async ({ request, cookies, redirect }) => {
     return redirect('/login?error=missing_fields', 302)
   }
 
-  // 1. Strict email domain check against configured ALLOWED_DOMAINS
-  const isDomainAllowed =
-    ALLOWED_DOMAINS.includes('*') ||
-    ALLOWED_DOMAINS.some((allowed) => email.endsWith(allowed));
-
-  if (!isDomainAllowed) {
+  // 1. Domain restriction check
+  if (!isEmailDomainAllowed(email)) {
     return redirect(`/login?error=domain_restricted&email=${encodeURIComponent(email)}`, 302)
   }
 

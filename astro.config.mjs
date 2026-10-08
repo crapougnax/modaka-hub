@@ -21,6 +21,7 @@ const localAliases = {
   '@quatrain/api': path.join(coreDir, 'api/src/index.ts'),
   '@quatrain/http': path.join(coreDir, 'http/src/index.ts'),
   '@quatrain/ai-gemini': path.join(coreDir, 'ai-gemini/src/index.ts'),
+  '@quatrain/ai-openai': path.join(coreDir, 'ai-openai/src/index.ts'),
   '@quatrain/ai': path.join(coreDir, 'ai/src/index.ts'),
   '@quatrain/log': path.join(coreDir, 'log/src/index.ts'),
   '@quatrain/ingestion': path.join(coreDir, 'ingestion/src/index.ts'),

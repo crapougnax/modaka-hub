@@ -9,7 +9,7 @@ export const GET: APIRoute = async ({ locals }) => {
   }
 
   const isAdmin =
-    locals.user.roles.includes('admin-brad') || locals.user.roles.includes('admin');
+    locals.user.roles.includes('admin') || locals.user.roles.includes('admin-brad');
 
   return new Response(
     JSON.stringify({

@@ -5,10 +5,11 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { initBackend } from '../../lib/backend';
 import { Log } from '@quatrain/log';
+import { getGitLocalPath, getDefaultSoa } from '../../lib/config';
 
 export const GET: APIRoute = async () => {
   await initBackend();
-  const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+  const gitLocalPath = getGitLocalPath();
   const telemetryDir = path.join(gitLocalPath, 'telemetry');
 
   try {
@@ -44,7 +45,7 @@ export const GET: APIRoute = async () => {
                     if (!documentStats[uid]) {
                       documentStats[uid] = {
                         documentUid: uid,
-                        soa: entry.soa || 'bradtech/world-agronomy',
+                        soa: entry.soa || getDefaultSoa(),
                         revision: entry.revision || 'rev-1.0.0',
                         totalUsages: 0,
                         helpfulVotes: 0,
@@ -86,7 +87,7 @@ export const GET: APIRoute = async () => {
 
 export const POST: APIRoute = async ({ request }) => {
   await initBackend();
-  const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+  const gitLocalPath = getGitLocalPath();
 
   try {
     const payload = await request.json();
@@ -102,7 +103,7 @@ export const POST: APIRoute = async ({ request }) => {
     const record = {
       type: 'telemetry',
       category: 'usage',
-      clientVersion: payload.clientVersion || 'hey-brad-v1.0.0',
+      clientVersion: payload.clientVersion || 'modaka-client-v1.0.0',
       timestamp: new Date().toISOString(),
       telemetryBatch: batch
     };

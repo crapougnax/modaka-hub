@@ -6,12 +6,12 @@ const user = Astro.locals.user
   ? {
       ...Astro.locals.user,
       isAdmin:
-        Astro.locals.user.roles?.includes('admin-brad') ||
-        Astro.locals.user.roles?.includes('admin')
+        Astro.locals.user.roles?.includes('admin') ||
+        Astro.locals.user.roles?.includes('admin-brad')
     }
   : null;
 ---
 
-<Layout title="Modaka-Hub - Curation OKF World Agronomy">
+<Layout title="Modaka-Hub - Curation Workbench">
 	<CurationWorkbench initialUser={user} client:only="react" />
 </Layout>

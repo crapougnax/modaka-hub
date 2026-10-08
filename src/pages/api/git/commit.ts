@@ -10,13 +10,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
     // Git push to remote authority repository is restricted to administrators
     if (doPush) {
       const userRoles = locals.user?.roles || [];
-      const isAdmin = userRoles.includes('admin-brad') || userRoles.includes('admin');
+      const isAdmin = userRoles.includes('admin') || userRoles.includes('admin-brad');
 
       if (!isAdmin) {
         return new Response(
           JSON.stringify({
             error: 'Forbidden',
-            message: 'Pushing to remote authority repository requires admin-brad role.'
+            message: 'Pushing to remote authority repository requires administrator role.'
           }),
           { status: 403, headers: { 'Content-Type': 'application/json' } }
         );

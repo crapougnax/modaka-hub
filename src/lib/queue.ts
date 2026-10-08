@@ -13,6 +13,7 @@ import { slugify, extractProperNouns } from './utils/index';
 import { buildS3Key } from './category-mapper';
 import { searchAndCreateConcept } from './concept-autolink';
 import { gitSync } from './git-sync';
+import { getGitLocalPath, getDefaultSoa } from './config';
 
 let backendPromise: Promise<void> | null = null;
 function ensureBackend() {
@@ -141,7 +142,7 @@ class ModakaHubQueueManager {
    protected async executeTask(task: IngestTask, updateProgress: (progress: number) => Promise<void>): Promise<void> {
       ensureBackend();
 
-      const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+      const gitLocalPath = getGitLocalPath();
       const useS3 = Boolean(process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY);
       const assetsPath = path.join(gitLocalPath, 'assets', 'documents');
       if (!useS3) {
@@ -187,7 +188,7 @@ class ModakaHubQueueManager {
                aiResult = await ocrAdapter.process(rawText || buffer!, {
                   isText: Boolean(rawText),
                   mimeType: isPdf ? 'application/pdf' : 'text/plain',
-                  contextNote: task.contextNote || 'Ingestion Bradtech pour base agronomique OKF. Extrais les 5 axes: sols (soils), climats (climates), latitudes/altitudes, itinéraires techniques (itineraries), productions végétales (crops). Extrais aussi rigoureusement les métadonnées bibliographiques: auteurs (authors: string[]), traducteurs (translators: string[]), éditeur (publisher: string), édition/version (edition: string), année de publication (publicationYear: string), langue (language: string), ISBN (isbn: string), DOI (doi: string), licence normalisée ou statut science ouverte (license: string, ex: "CC-BY-4.0", "CC-BY-SA-4.0", "CC0-1.0", "Open Access", "Propriétaire", ou non spécifié), copyright de cette édition (copyright: string), titre original (originalTitle: string), langue originale (originalLanguage: string), éditeur d\'origine (originalPublisher: string), année originale (originalYear: string), copyright original (originalCopyright: string), et la citation normalisée (citation: string).',
+                  contextNote: task.contextNote || 'Ingestion pour base agronomique et de connaissances OKF. Extrais les 5 axes: sols (soils), climats (climates), latitudes/altitudes, itinéraires techniques (itineraries), productions végétales (crops). Extrais aussi rigoureusement les métadonnées bibliographiques: auteurs (authors: string[]), traducteurs (translators: string[]), éditeur (publisher: string), édition/version (edition: string), année de publication (publicationYear: string), langue (language: string), ISBN (isbn: string), DOI (doi: string), licence normalisée ou statut science ouverte (license: string, ex: "CC-BY-4.0", "CC-BY-SA-4.0", "CC0-1.0", "Open Access", "Propriétaire", ou non spécifié), copyright de cette édition (copyright: string), titre original (originalTitle: string), langue originale (originalLanguage: string), éditeur d\'origine (originalPublisher: string), année originale (originalYear: string), copyright original (originalCopyright: string), et la citation normalisée (citation: string).',
                   model
                });
             }
@@ -216,7 +217,7 @@ class ModakaHubQueueManager {
 
       const gitStatus = await gitSync.getStatus();
       const currentRev = gitStatus.lastCommit ? `rev-${gitStatus.lastCommit.split(' ')[0]}` : 'rev-1.0.0';
-      const soa = task.soa || process.env.DEFAULT_SOA || 'bradtech/world-agronomy';
+      const soa = task.soa || getDefaultSoa();
 
       const fileHash = task.fileHash || (buffer ? crypto.createHash('sha256').update(buffer).digest('hex') : undefined);
       const originalFileName = task.name || `${slugify(title)}.pdf`;
@@ -229,7 +230,7 @@ class ModakaHubQueueManager {
             const docStorage = Storage.getStorage('document-storage');
             const stream = Readable.from(buffer);
             await docStorage.create(
-               { ref: s3Key, bucket: process.env.S3_BUCKET || 'world-agronomy', contentType: isPdf ? 'application/pdf' : 'application/octet-stream' } as any,
+               { ref: s3Key, bucket: process.env.S3_BUCKET || 'documents', contentType: isPdf ? 'application/pdf' : 'application/octet-stream' } as any,
                stream
             );
             relativeAssetUri = s3Key;
@@ -272,7 +273,7 @@ class ModakaHubQueueManager {
          description: summary,
          originalFileUri: relativeAssetUri,
          fileHash,
-         source: task.source || 'Bradtech Modaka-Hub Hub',
+         source: task.source || 'Modaka-Hub Curation Workbench',
          documentDate: aiResult?.deductedDate || new Date().toISOString().split('T')[0],
          // Bibliographic & Intellectual Property References
          authors: task.authors || aiResult?.authors || [],

@@ -9,9 +9,9 @@
  * - Open Knowledge Format (OKF v0.2) packaging
  *
  * @example
- *   yarn bulk-ingest --dry-run ~/DOCUMENTS/BRAD/RAG
- *   yarn bulk-ingest --concurrency 3 --batch-commit 50 ~/DOCUMENTS/BRAD/RAG
- *   yarn bulk-ingest --resume --skip-ai ~/DOCUMENTS/BRAD/RAG
+ *   yarn bulk-ingest --dry-run ~/DOCUMENTS/KNOWLEDGE
+ *   yarn bulk-ingest --concurrency 3 --batch-commit 50 ~/DOCUMENTS/KNOWLEDGE
+ *   yarn bulk-ingest --resume --skip-ai ~/DOCUMENTS/KNOWLEDGE
  */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -95,7 +95,7 @@ function printUsage(exitCode = 1): void {
    print('');
    print('Options:');
    print('  --category <cat>       Default OKF category');
-   print('  --soa <soa>            Source of Authority (default: bradtech/world-agronomy)');
+   print('  --soa <soa>            Source of Authority (default: modaka/authority)');
    print('  --concurrency <n>      Parallel tasks (default: 3)');
    print('  --delay <ms>           Delay between tasks (default: 500)');
    print('  --batch-commit <n>     Docs per Git commit (default: 50)');
@@ -119,7 +119,7 @@ function parseArgs(argv: string[]): CliOptions {
    const args = argv.slice(2);
    const opts: CliOptions = {
       sourceDir: '',
-      soa: process.env.DEFAULT_SOA || 'bradtech/world-agronomy',
+      soa: process.env.DEFAULT_SOA || 'modaka/authority',
       concurrency: 3,
       delayMs: 500,
       batchCommit: 50,

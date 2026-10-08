@@ -2,6 +2,7 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
 import { Log } from '@quatrain/log';
+import { getGitLocalPath } from './config';
 
 const execPromise = promisify(exec);
 
@@ -17,7 +18,7 @@ export class GitSyncService {
   protected repoPath: string;
 
   constructor(repoPath?: string) {
-    this.repoPath = repoPath || process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+    this.repoPath = repoPath || getGitLocalPath();
   }
 
   public async getStatus(): Promise<GitStatusResult> {

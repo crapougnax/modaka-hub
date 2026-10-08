@@ -1,6 +1,12 @@
 ---
-const error = Astro.url.searchParams.get('error')
-const rejectedEmail = Astro.url.searchParams.get('email')
+import { loadHubConfig, getAllowedEmailDomains } from '../lib/config';
+
+const error = Astro.url.searchParams.get('error');
+const rejectedEmail = Astro.url.searchParams.get('email');
+const hubConfig = loadHubConfig();
+const allowedDomains = getAllowedEmailDomains();
+const isDomainRestricted = !allowedDomains.includes('*') && !allowedDomains.includes('@*');
+const domainBadgeText = isDomainRestricted ? allowedDomains.join(', ') : 'Ouvert';
 ---
 
 <!doctype html>
@@ -242,12 +248,12 @@ const rejectedEmail = Astro.url.searchParams.get('email')
   <body>
     <div class="login-card">
       <div class="logo-badge">
-        🌱 Bradtech Curation Hub
+        🌱 {hubConfig.badgeLabel || 'Curation Workbench'}
       </div>
 
-      <h1>Modaka-Hub</h1>
+      <h1>{hubConfig.appTitle || 'Modaka-Hub'}</h1>
       <p class="subtitle">
-        Centre d'autorité agronomique & structuration <strong>OKF v0.1</strong>.
+        {hubConfig.appSubtitle || 'Centre d\'autorité et de structuration OKF v0.2'}
       </p>
 
       {error === 'invalid_credentials' && (
@@ -259,8 +265,8 @@ const rejectedEmail = Astro.url.searchParams.get('email')
 
       {error === 'domain_restricted' && (
         <div class="alert error">
-          ⛔ <strong>Accès restreint aux collaborateurs Brad</strong><br />
-          L'adresse <code>{rejectedEmail || 'non-autorisée'}</code> n'est pas autorisée. Veuillez utiliser votre compte <span class="domain-badge">@brad.ag</span>.
+          ⛔ <strong>Accès restreint</strong><br />
+          L'adresse <code>{rejectedEmail || 'non-autorisée'}</code> n'est pas autorisée.{isDomainRestricted && (<span> Veuillez utiliser une adresse autorisée (<span class="domain-badge">{domainBadgeText}</span>).</span>)}
         </div>
       )}
 
@@ -274,13 +280,13 @@ const rejectedEmail = Astro.url.searchParams.get('email')
       <!-- Formulaire Direct Email / Mot de Passe -->
       <form class="auth-form" method="POST" action="/api/auth/password-login">
         <div class="form-group">
-          <label for="email">Adresse Email Brad</label>
+          <label for="email">Adresse Email</label>
           <input
             id="email"
             name="email"
             type="email"
             class="form-input"
-            placeholder="prenom.nom@brad.ag"
+            placeholder="prenom.nom@exemple.com"
             required
             autocomplete="email"
           />
@@ -306,18 +312,18 @@ const rejectedEmail = Astro.url.searchParams.get('email')
 
       <div class="divider">ou</div>
 
-      <!-- Bouton SSO Brad OAuth -->
+      <!-- Bouton SSO OAuth -->
       <a href="/api/auth/login" class="btn-sso">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
           <polyline points="10 17 15 12 10 7" />
           <line x1="15" y1="12" x2="3" y2="12" />
         </svg>
-        Connexion via Brad SSO / OAuth
+        Connexion via SSO / OAuth
       </a>
 
       <div class="footer-note">
-        Authentification Supabase Directe • Restriction <span class="domain-badge">@brad.ag</span>
+        Authentification Supabase Directe {isDomainRestricted && (<span>• Restriction <span class="domain-badge">{domainBadgeText}</span></span>)}
       </div>
     </div>
   </body>

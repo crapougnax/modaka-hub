@@ -11,7 +11,7 @@
 
 import { AbstractAiAdapter } from '@quatrain/ai';
 import { GeminiAdapter } from '@quatrain/ai-gemini';
-import { BradAgronomyProfile, extractPdfPages } from '@quatrain/okf-ingest';
+import { AgroecologyTaxonomyProfile, extractPdfPages } from '@quatrain/okf-ingest';
 import {
    CatalogEntryChunk,
    CatalogIngestionOptions,
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
       aiAdapter.init();
    }
 
-   const gitLocalPath = process.env.GIT_LOCAL_PATH || '/Users/crapougnax/CODE/BRAD2026/world-agronomy';
+   const gitLocalPath = process.env.GIT_LOCAL_PATH || path.resolve(process.cwd(), './data/okf');
    console.log(`\n📚 Modaka-Hub Encyclopedic Catalog Ingestion`);
    console.log(`  File:        ${opts.pdfPath}`);
    console.log(`  Category:    ${opts.category}`);
@@ -273,7 +273,7 @@ async function main(): Promise<void> {
       filename,
       defaultCategory: opts.category,
       entryType: 'catalog-entry',
-      taxonomyProfile: new BradAgronomyProfile(),
+      taxonomyProfile: new AgroecologyTaxonomyProfile(),
       targetLanguages: opts.languages,
       onProgress: (current, total, title) => {
          process.stdout.write(`\r  Processing entry ${current}/${total} : ${title.slice(0, 40).padEnd(40)}`);

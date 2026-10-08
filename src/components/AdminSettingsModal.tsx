@@ -55,13 +55,13 @@ export function AdminSettingsModal({ opened, onClose }: AdminSettingsModalProps)
   const [s3SecretKey, setS3SecretKey] = useState('');
 
   const [gitLocalPath, setGitLocalPath] = useState('');
-  const [gitRepoOwner, setGitRepoOwner] = useState('bradtech');
-  const [gitRepoName, setGitRepoName] = useState('world-agronomy');
-  const [gitBranch, setGitBranch] = useState('feat/bookworm-poc');
+  const [gitRepoOwner, setGitRepoOwner] = useState('Quatrain');
+  const [gitRepoName, setGitRepoName] = useState('knowledge');
+  const [gitBranch, setGitBranch] = useState('develop');
   const [gitMode, setGitMode] = useState('local');
 
   const [supabaseUrl, setSupabaseUrl] = useState('');
-  const [allowedDomain, setAllowedDomain] = useState('@brad.ag');
+  const [allowedDomain, setAllowedDomain] = useState('*');
 
   const loadConfig = async () => {
     setLoading(true);
@@ -78,7 +78,7 @@ export function AdminSettingsModal({ opened, onClose }: AdminSettingsModalProps)
         if (data.storage) {
           setStorageType(data.storage.type || 'local');
           setDocStoragePath(data.storage.documentStoragePath || '');
-          setS3Bucket(data.storage.s3Bucket || 'world-agronomy');
+          setS3Bucket(data.storage.s3Bucket || 'documents');
           setS3Region(data.storage.s3Region || 'us-east-1');
           setS3Endpoint(data.storage.s3Endpoint || '');
           setS3AccessKey(data.storage.s3AccessKey || '');
@@ -86,14 +86,14 @@ export function AdminSettingsModal({ opened, onClose }: AdminSettingsModalProps)
         }
         if (data.git) {
           setGitLocalPath(data.git.localPath || '');
-          setGitRepoOwner(data.git.repoOwner || 'bradtech');
-          setGitRepoName(data.git.repoName || 'world-agronomy');
-          setGitBranch(data.git.branch || 'feat/bookworm-poc');
+          setGitRepoOwner(data.git.repoOwner || 'Quatrain');
+          setGitRepoName(data.git.repoName || 'knowledge');
+          setGitBranch(data.git.branch || 'develop');
           setGitMode(data.git.mode || 'local');
         }
         if (data.auth) {
           setSupabaseUrl(data.auth.supabaseUrl || '');
-          setAllowedDomain(data.auth.allowedDomain || '@brad.ag');
+          setAllowedDomain(data.auth.allowedDomain || '*');
         }
       } else {
         setError('Impossible de charger la configuration (droits admin requis).');
@@ -380,8 +380,8 @@ export function AdminSettingsModal({ opened, onClose }: AdminSettingsModalProps)
                 mb="sm"
               />
               <Group gap="xs" mt="md">
-                <Badge color="yellow">admin-brad : Privilèges complets (Push Git, Paramètres)</Badge>
-                <Badge color="blue">user-brad : Curateur (Ingestion, Écriture fiches OKF)</Badge>
+                <Badge color="yellow">admin : Privilèges complets (Push Git, Paramètres)</Badge>
+                <Badge color="blue">curator : Curateur (Ingestion, Écriture fiches OKF)</Badge>
               </Group>
             </Paper>
           </Stack>
